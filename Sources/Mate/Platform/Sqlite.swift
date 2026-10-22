@@ -6,7 +6,7 @@ import SQLite3
 /// is that writes still sitting in the WAL (not yet checkpointed) are not seen. Never logs values.
 enum Sqlite {
     /// The `value` column of the row whose `key` column equals `key`, as UTF-8 text; nil when the file, the table or
-    /// the row is missing, or the value is not text. `table` must be a plain identifier.
+    /// the row is missing, the read fails, or the value is not text. `table` must be a plain identifier.
     static func readValue(db: URL, table: String, key: String) -> String? {
         readValues(db: db, table: table, keys: [key])?[key]
     }
@@ -36,7 +36,14 @@ enum Sqlite {
         for key in keys {
             sqlite3_reset(stmt)
             sqlite3_clear_bindings(stmt)
-            guard sqlite3_bind_text(stmt, 1, key, -1, transient) == SQLITE_OK, sqlite3_step(stmt) == SQLITE_ROW else { continue }
+            guard sqlite3_bind_text(stmt, 1, key, -1, transient) == SQLITE_OK else { return nil }
+            let step = sqlite3_step(stmt)
+            // Only DONE means "no such row"; BUSY, CORRUPT, IOERR… mean the database could not be read.
+            if step == SQLITE_DONE { continue }
+            guard step == SQLITE_ROW else {
+                Log.error("sqlite: read of \(db.lastPathComponent) failed (\(step))")
+                return nil
+            }
             let n = Int(sqlite3_column_bytes(stmt, 0))
             guard n > 0, let bytes = sqlite3_column_blob(stmt, 0),
                   let s = String(data: Data(bytes: bytes, count: n), encoding: .utf8) else { continue }

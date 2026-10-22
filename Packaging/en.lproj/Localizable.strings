@@ -104,3 +104,5 @@
 "no se pudo leer la sesión" = "could not read the session";
 "sin proyecto de Code Assist" = "no Code Assist project";
 "sin presupuesto" = "no budget set";
+"Sin sesión" = "No session";
+"Esperando a %@" = "Waiting for %@";

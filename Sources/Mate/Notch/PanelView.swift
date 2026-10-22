@@ -95,6 +95,22 @@ struct PanelView: View {
             if let fetchedAt, now.timeIntervalSince(fetchedAt) > FetchSchedule.idleInterval + 300 {
                 age(fetchedAt, now: now)
             }
+        case .error(AccountRegistry.noSession):
+            // An agent-only account whose session ended: its last data stays below.
+            HStack(spacing: 6) {
+                Text("Sin sesión")
+                if let fetchedAt { Text(verbatim: "· " + NotchText.age(fetchedAt, now: now)) }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(NotchPalette.muted)
+        case .stale where account.provider.waitsForItsApp:
+            // Cursor and Gemini CLI refresh their own tokens; Mate waits for them.
+            HStack(spacing: 6) {
+                Text("Esperando a \(account.provider.agentAppName)")
+                if let fetchedAt { Text(verbatim: "· " + NotchText.age(fetchedAt, now: now)) }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(NotchPalette.muted)
         case .error(let why) where fetchedAt == nil:
             // A failing endpoint with no earlier data to fall back on.
             Text("No disponible: \(Self.reason(why))")

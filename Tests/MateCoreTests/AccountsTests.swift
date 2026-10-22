@@ -258,3 +258,47 @@ private func obs(_ identity: String, _ dir: String = "~/.claude", email: String?
                     scannedDirs: ["~/.claude", "/Users/u/.claude-work"], sourceDirs: ["/Users/u/.claude-work"])
     #expect(r.accounts.first { $0.identity == "a" }?.source == .detected)
 }
+
+@Test func agentOnlyEndedSessionIsKeptWithoutSession() {
+    var r = AccountRegistry()
+    let dir = "~/Library/Application Support/Cursor"
+    _ = r.reconcile(provider: .cursor, observed: [obs("a", dir, .cursor)], scannedDirs: [dir], agentOnly: true)
+    let i = r.accounts.firstIndex { $0.id == "cursor:a" }!
+    r.accounts[i].name = "Trabajo"
+    let color = r.accounts[i].colorIndex
+    // Another account signs in: A stays listed, without a session, and is not refreshable.
+    _ = r.reconcile(provider: .cursor, observed: [obs("b", dir, .cursor)], scannedDirs: [dir], agentOnly: true)
+    let a = r.accounts.first { $0.id == "cursor:a" }!
+    #expect(r.accounts.count == 2)
+    #expect(a.owner == .mate)
+    #expect(a.agentConfigDir == nil)
+    #expect(a.status == .error(AccountRegistry.noSession))
+    // Logged out entirely: B too.
+    _ = r.reconcile(provider: .cursor, observed: [], scannedDirs: [dir], agentOnly: true)
+    #expect(r.accounts.first { $0.id == "cursor:b" }?.status == .error(AccountRegistry.noSession))
+    // A returns: agent-owned again, name and color kept.
+    _ = r.reconcile(provider: .cursor, observed: [obs("a", dir, .cursor)], scannedDirs: [dir], agentOnly: true)
+    let back = r.accounts.first { $0.id == "cursor:a" }!
+    #expect(back.owner == .agent)
+    #expect(back.agentConfigDir == dir)
+    #expect(back.status == .ok)
+    #expect(back.name == "Trabajo")
+    #expect(back.colorIndex == color)
+}
+
+@Test func unreadDirKeepsAgentOnlySession() {
+    var r = AccountRegistry()
+    let dir = "~/.gemini"
+    _ = r.reconcile(provider: .gemini, observed: [obs("a", dir, .gemini)], scannedDirs: [dir], agentOnly: true)
+    _ = r.reconcile(provider: .gemini, observed: [], scannedDirs: [], agentOnly: true)
+    #expect(r.accounts[0].owner == .agent)
+    #expect(r.accounts[0].status == .ok)
+}
+
+@Test func regularProvidersDoNotGetNoSession() {
+    var r = AccountRegistry()
+    _ = r.reconcile(provider: .claude, observed: [obs("a")], scannedDirs: ["~/.claude"])
+    _ = r.reconcile(provider: .claude, observed: [], scannedDirs: ["~/.claude"])
+    #expect(r.accounts[0].owner == .mate)
+    #expect(r.accounts[0].status == .ok)
+}

@@ -50,8 +50,9 @@ protocol Provider: AnyObject, Sendable {
     var extraConfigDirs: [String] { get set }
     /// Scripted providers (`--fake`) count as always active.
     var alwaysActive: Bool { get }
-    /// Accounts exist only while the agent's session does (Cursor, Gemini, Copilot, Grok): Mate keeps no copy of
-    /// their credentials, never refreshes them, and drops the account when the session goes away.
+    /// Only the agent's session can be fetched with (Cursor, Gemini, Copilot, Grok): Mate keeps no copy of their
+    /// credentials and never refreshes them. When the session ends the account stays listed with its last data and
+    /// status `.error(AccountRegistry.noSession)`, unfetched, until that identity signs in again.
     var agentOnly: Bool { get }
 
     func observeSessions() async -> SessionScan
@@ -82,6 +83,14 @@ extension Provider {
         guard registry.canRefresh(accountID) else { throw ProviderError.refreshNotAllowed }
         return try await exchangeRefreshToken(tokens)
     }
+}
+
+extension ProviderID {
+    /// Providers whose app or CLI refreshes the token Mate reads: an expired or rejected token means waiting for it.
+    var waitsForItsApp: Bool { self == .cursor || self == .gemini }
+
+    /// The app or CLI that holds the session ("Esperando a Cursor").
+    var agentAppName: String { self == .gemini ? "Gemini CLI" : displayName }
 }
 
 extension String {

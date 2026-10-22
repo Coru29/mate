@@ -169,6 +169,17 @@ final class UsageStore: ObservableObject {
         }
     }
 
+    /// Re-reads one provider's sessions and fetches its accounts. Settings (Task 14) must call it after the Grok key,
+    /// team id or budget change (Grok has no file to watch), and after a provider is re-enabled.
+    func reloadProvider(_ id: ProviderID) async {
+        guard let p = provider(id) else { return }
+        await reconcile(p)
+        for a in registry.accounts where a.provider == id && !a.hidden {
+            fetchState[a.id]?.failures = 0
+            await fetch(a.id)
+        }
+    }
+
     // MARK: Adding accounts
 
     enum AddError: LocalizedError {
@@ -273,8 +284,7 @@ final class UsageStore: ObservableObject {
             let scan = await p.observeSessions()
             let before = Dictionary(uniqueKeysWithValues: registry.accounts.map { ($0.id, ($0.owner, $0.agentConfigDir)) })
             let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs,
-                                             sourceDirs: Set(configDirs[p.id.rawValue] ?? []))
-            if p.agentOnly { dropEndedSessions(p.id) }
+                                             sourceDirs: Set(configDirs[p.id.rawValue] ?? []), agentOnly: p.agentOnly)
             commitRegistry()
             recordSwitches(scan.sessions, provider: p.id)
             startIndexing(p)
@@ -301,20 +311,6 @@ final class UsageStore: ObservableObject {
         for waiter in reconcileWaiters.removeValue(forKey: p.id) ?? [] { waiter.resume() }
         if p.id == .cursor && activationObserver != nil { frontmostChanged(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) }
         scheduleFetches()
-    }
-
-    /// Accounts of an agent-only provider whose session ended (the registry handed them to Mate) are removed with
-    /// their data: there is nothing Mate could fetch them with.
-    private func dropEndedSessions(_ id: ProviderID) {
-        let ended = registry.accounts.filter { $0.provider == id && $0.owner == .mate }
-        guard !ended.isEmpty else { return }
-        for a in ended {
-            _ = registry.remove(a.id) // never acted on: the only "copy" (Grok's key) is the session itself
-            snapshots[a.id] = nil
-            fetchState[a.id] = nil
-            Log.info("\(a.id): session ended; account removed")
-        }
-        persistence.save("snapshots") { [unowned self] in snapshots }
     }
 
     private func recordSwitches(_ sessions: [ObservedSession], provider id: ProviderID) {
@@ -386,6 +382,8 @@ final class UsageStore: ObservableObject {
     private func fetch(_ id: String) async {
         guard let account = registry.accounts.first(where: { $0.id == id }), let p = provider(account.provider),
               isEnabled(account.provider), fetchState[id]?.inFlight != true else { return }
+        // An agent-only account without a session has nothing to fetch with (and no Mate copy to refresh).
+        if p.agentOnly && account.owner == .mate { return }
         fetchState[id, default: FetchState()].inFlight = true
         let outcome = await (account.owner == .agent ? fetchAgentOwned(account, p) : fetchMateOwned(account, p))
         let now = Date()
@@ -435,9 +433,9 @@ final class UsageStore: ObservableObject {
         do {
             return .success(try await p.fetchUsage(account: account, tokens: tokens))
         } catch ProviderError.unauthorized {
-            // FetchPolicy: always .markStale for agent-owned; the agent will refresh it. An agent-only session
-            // (often a key the user typed) says why instead.
-            return .skipped(p.agentOnly ? .error("unauthorized") : .stale)
+            // FetchPolicy: always .markStale for agent-owned; the agent will refresh it. A token nothing will
+            // refresh (Copilot's, Grok's key) says why instead.
+            return .skipped(p.agentOnly && !account.provider.waitsForItsApp ? .error("unauthorized") : .stale)
         } catch {
             return .failed(Self.status(error))
         }
@@ -556,7 +554,7 @@ final class UsageStore: ObservableObject {
 
     /// Hidden accounts, disabled providers and expired Mate copies (they need a new login) are not fetched on a schedule.
     private func isSchedulable(_ a: Account) -> Bool {
-        isEnabled(a.provider) && !a.hidden && !(a.owner == .mate && a.status == .expired) && fetchState[a.id]?.inFlight != true
+        isEnabled(a.provider) && !a.hidden && a.status != .error(AccountRegistry.noSession) && !(a.owner == .mate && a.status == .expired) && fetchState[a.id]?.inFlight != true
     }
 
     private func scheduleFetches() {
@@ -618,8 +616,8 @@ final class UsageStore: ObservableObject {
 
     private func frontmostChanged(_ bundleID: String?) {
         // Without a Cursor account there is nothing to show for it.
-        let on = !isPaused && bundleID == CursorProvider.bundleID
-            && registry.accounts.contains { $0.provider == .cursor && !$0.hidden }
+        let on = !isPaused && isEnabled(.cursor) && bundleID == CursorProvider.bundleID
+            && registry.accounts.contains { $0.provider == .cursor && !$0.hidden && $0.owner == .agent }
         guard on != cursorFrontmost else { return }
         cursorFrontmost = on
         let now = Date()

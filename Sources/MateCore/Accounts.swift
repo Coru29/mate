@@ -94,6 +94,9 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     public var accounts: [Account]
 
     /// The id of the account of `identity` at `provider`; also the key of `SwitchHistory` and the aggregates' slices.
+    /// Status of an agent-only account whose session ended (kept listed with its last data, never fetched).
+    public static let noSession = "noSession"
+
     public static func accountID(provider: ProviderID, identity: String) -> String { "\(provider.rawValue):\(identity)" }
 
     public init(accounts: [Account] = []) { self.accounts = accounts }
@@ -107,8 +110,11 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     /// Emits one `storeShadow` per account, for the session in its `agentConfigDir`.
     /// `sourceDirs` are the config dirs the user added as sources: an account first observed in one of them gets
     /// `.configDir(dir)` as its source (`.detected` otherwise).
+    /// `agentOnly` providers (Mate keeps no copy of their credentials) keep a demoted account listed with status
+    /// `.error(noSession)`: nothing can fetch it until its identity is observed again, which revives it.
     public mutating func reconcile(provider: ProviderID, observed: [ObservedSession],
-                                   scannedDirs: Set<String>, sourceDirs: Set<String> = []) -> [OwnershipAction] {
+                                   scannedDirs: Set<String>, sourceDirs: Set<String> = [],
+                                   agentOnly: Bool = false) -> [OwnershipAction] {
         var actions: [OwnershipAction] = []
         let sessions = observed.filter { $0.provider == provider }
         var done = Set<String>()
@@ -124,6 +130,7 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
                 if let email { accounts[i].email = email }
                 // A fresh agent login revives an account whose Mate copy had died.
                 if accounts[i].owner == .mate && accounts[i].status == .expired { accounts[i].status = .ok }
+                if accounts[i].status == .error(Self.noSession) { accounts[i].status = .ok }
                 accounts[i].owner = .agent
                 if accounts[i].agentConfigDir.map({ dirs.contains($0) }) != true {
                     accounts[i].agentConfigDir = dirs[0]
@@ -143,6 +150,7 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
             if let dir = accounts[i].agentConfigDir, scannedDirs.contains(dir) {
                 accounts[i].owner = .mate
                 accounts[i].agentConfigDir = nil
+                if agentOnly { accounts[i].status = .error(Self.noSession) }
             }
         }
         return actions
