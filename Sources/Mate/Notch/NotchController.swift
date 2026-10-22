@@ -604,7 +604,7 @@ final class NotchController {
     }
 
     /// Account switching by a horizontal two-finger swipe on the trackpad only: exactly one account per physical
-    /// swipe (`SwipeStepper`), fingers to the left for the next one. Vertical scrolling, mouse wheels and momentum
+    /// swipe (`SwipeStepper`), fingers to the right for the next one. Vertical scrolling, mouse wheels and momentum
     /// are ignored (the panel was too easy to flip by accident). Returns whether the event was used.
     private func scrolled(_ event: NSEvent) -> Bool {
         guard event.window === window else { return false }

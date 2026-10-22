@@ -13,7 +13,7 @@ private func run(_ events: [(SwipeStepper.Phase, Bool, CGFloat)]) -> [Int] {
     let swipe: [(SwipeStepper.Phase, Bool, CGFloat)] = [(.mayBegin, false, 0), (.began, false, -5)]
         + Array(repeating: (.changed, false, -15), count: 10) + [(.ended, false, 0)]
     let momentum: [(SwipeStepper.Phase, Bool, CGFloat)] = Array(repeating: (.none, true, -30), count: 20)
-    #expect(run(swipe + momentum) == [1])
+    #expect(run(swipe + momentum) == [-1])
 }
 
 @Test func momentumAloneNeverSteps() {
@@ -23,7 +23,7 @@ private func run(_ events: [(SwipeStepper.Phase, Bool, CGFloat)]) -> [Int] {
 @Test func eachSwipeStepsOnceInItsDirection() {
     let left: [(SwipeStepper.Phase, Bool, CGFloat)] = [(.began, false, 0), (.changed, false, -50), (.changed, false, -50), (.ended, false, 0)]
     let right: [(SwipeStepper.Phase, Bool, CGFloat)] = [(.began, false, 0), (.changed, false, 30), (.changed, false, 30), (.ended, false, 0)]
-    #expect(run(left + left + right) == [1, 1, -1])
+    #expect(run(left + left + right) == [-1, -1, 1])
 }
 
 @Test func shortSwipeAndVerticalScrollDoNotStep() {
@@ -37,8 +37,9 @@ private func run(_ events: [(SwipeStepper.Phase, Bool, CGFloat)]) -> [Int] {
     #expect(s.feed(phase: .none, momentum: false, deltaX: -100, deltaY: 0, invertedFromDevice: false) == nil)
 }
 
-/// Content follows the fingers whatever the "natural scrolling" setting: fingers to the left is the next account.
-@Test func fingersLeftIsNextWithAndWithoutNaturalScrolling() {
+/// The same whatever the "natural scrolling" setting: fingers to the left is the previous account (the pages slide
+/// right), fingers to the right the next one.
+@Test func fingersLeftIsPreviousWithAndWithoutNaturalScrolling() {
     for inverted in [true, false] {
         // The same physical swipe to the left, as each setting reports it.
         let deltaX: CGFloat = inverted ? 25 : -25
@@ -47,14 +48,14 @@ private func run(_ events: [(SwipeStepper.Phase, Bool, CGFloat)]) -> [Int] {
         let steps = (0..<3).compactMap { _ in
             s.feed(phase: .changed, momentum: false, deltaX: deltaX, deltaY: 0, invertedFromDevice: inverted)
         }
-        #expect(steps == [1], "invertedFromDevice: \(inverted)")
+        #expect(steps == [-1], "invertedFromDevice: \(inverted)")
         #expect(SwipeStepper.fingerDX(scrollingDeltaX: deltaX, invertedFromDevice: inverted) < 0)
-        // And to the right: the previous account.
+        // And to the right: the next account.
         var r = SwipeStepper(threshold: 40)
         _ = r.feed(phase: .began, momentum: false, deltaX: 0, deltaY: 0, invertedFromDevice: inverted)
         let back = (0..<3).compactMap { _ in
             r.feed(phase: .changed, momentum: false, deltaX: -deltaX, deltaY: 0, invertedFromDevice: inverted)
         }
-        #expect(back == [-1], "invertedFromDevice: \(inverted)")
+        #expect(back == [1], "invertedFromDevice: \(inverted)")
     }
 }

@@ -23,8 +23,8 @@ public struct SwipeStepper: Sendable {
     }
 
     /// Feeds one event (`scrollingDeltaX`, `scrollingDeltaY`, `isDirectionInvertedFromDevice` as the event has
-    /// them). Returns +1 (fingers to the left: the content follows them and the next account comes in from the
-    /// right) or -1 (fingers to the right: the previous one), once per swipe.
+    /// them). Returns -1 (fingers to the left: the pages slide to the right and the previous account comes in from
+    /// the left, as the user asked) or +1 (fingers to the right: the next one, from the right), once per swipe.
     public mutating func feed(phase: Phase, momentum: Bool, deltaX: CGFloat, deltaY: CGFloat,
                               invertedFromDevice: Bool) -> Int? {
         let fingerDX = Self.fingerDX(scrollingDeltaX: deltaX, invertedFromDevice: invertedFromDevice)
@@ -45,7 +45,7 @@ public struct SwipeStepper: Sendable {
         accumulated += fingerDX
         guard abs(accumulated) >= threshold else { return nil }
         stepped = true
-        return accumulated < 0 ? 1 : -1
+        return accumulated < 0 ? -1 : 1
     }
 
     public mutating func reset() {
