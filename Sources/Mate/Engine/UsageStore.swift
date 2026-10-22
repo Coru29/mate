@@ -85,7 +85,7 @@ final class UsageStore: ObservableObject {
 
     func start() {
         guard watcher == nil else { return }
-        let w = FileWatcher(paths: watchedPaths) { [weak self] changed in
+        let w = FileWatcher(paths: watchedPaths, latency: NotchRefresh.logLatency(panelOpen: panelOpen)) { [weak self] changed in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.filesChanged(changed) } }
         }
         w.start()
@@ -121,6 +121,7 @@ final class UsageStore: ObservableObject {
 
     func panelDidOpen() {
         panelOpen = true
+        watcher?.setLatency(NotchRefresh.logLatency(panelOpen: true))
         guard !isPaused else { return }
         let now = Date()
         for a in registry.accounts where !a.hidden
@@ -132,6 +133,7 @@ final class UsageStore: ObservableObject {
 
     func panelDidClose() {
         panelOpen = false
+        watcher?.setLatency(NotchRefresh.logLatency(panelOpen: false))
         scheduleFetches()
     }
 
@@ -714,12 +716,16 @@ final class UsageStore: ObservableObject {
     private func ingest(_ events: [TokenEvent], cursors: [String: FileCursor]) {
         if !events.isEmpty {
             var agg = aggregates
+            var added = false
             for e in events {
                 let account = e.logDir.flatMap { switchHistory.account(forConfigDir: $0, at: e.at) }
-                agg.add(e, accountID: account)
+                if agg.add(e, accountID: account) { added = true }
             }
-            aggregates = agg
-            persistence.save("aggregates") { [unowned self] in aggregates }
+            // Re-read or duplicate events change nothing: no publish, no save.
+            if added {
+                aggregates = agg
+                persistence.save("aggregates") { [unowned self] in aggregates }
+            }
         }
         persistence.save("cursors") { cursors }
     }

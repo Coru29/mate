@@ -76,7 +76,7 @@ final class NotchController {
     private var monitors: [Any] = []
     private var swipe = SwipeStepper(threshold: scrollThreshold)
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
-    private var storeChanges: AnyCancellable?
+    private var storeChanges: [AnyCancellable] = []
     private var refreshQueued = false
     private var showAlways = NotchPrefs.showPillAlways
     private var screenChoice = NotchPrefs.screenChoice
@@ -107,7 +107,7 @@ final class NotchController {
         observe(center, NSApplication.didChangeScreenParametersNotification) { $0.layout() }
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { $0.spaceChanged() }
         observe(center, UserDefaults.didChangeNotification) { $0.preferencesChanged() }
-        storeChanges = store.objectWillChange.sink { [weak self] _ in self?.queueRefresh() }
+        observeStore()
 
         layout()
         window.orderFrontRegardless()
@@ -440,10 +440,27 @@ final class NotchController {
         pillShown = wanted
     }
 
+    /// Only the store changes that can change what the notch shows (`NotchRefresh`): closed, an agent streaming
+    /// its log (new aggregates every batch) costs the notch nothing.
+    private func observeStore() {
+        func on<V>(_ change: NotchRefresh.Change, _ publisher: Published<V>.Publisher) -> AnyCancellable {
+            // dropFirst: a @Published publisher replays its current value on subscription.
+            publisher.dropFirst().sink { [weak self] _ in
+                guard let self, NotchRefresh.needed(for: change, panelOpen: self.mode == .open) else { return }
+                self.queueRefresh()
+            }
+        }
+        storeChanges = [
+            on(.accounts, store.$accounts), on(.snapshots, store.$snapshots),
+            on(.activeProvider, store.$activeProvider), on(.selection, store.$selectedAccountID),
+            on(.paused, store.$isPaused), on(.aggregates, store.$aggregates),
+        ]
+    }
+
     private func queueRefresh() {
         guard !refreshQueued else { return }
         refreshQueued = true
-        // objectWillChange fires before the change: read the store on the next turn of the run loop.
+        // @Published publishes before the change: read the store on the next turn of the run loop.
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 self?.refreshQueued = false
