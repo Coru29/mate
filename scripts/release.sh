@@ -37,6 +37,8 @@ cat "$NOTES"
 [ $DRY = 1 ] && exit 0
 
 command -v gh >/dev/null || { echo "Falta gh (GitHub CLI)." >&2; exit 1; }
+BRANCH=$(git symbolic-ref --quiet --short HEAD || true)
+[ "$BRANCH" = "main" ] || { echo "Los releases salen solo de main (estás en ${BRANCH:-un HEAD suelto})." >&2; exit 1; }
 git remote get-url origin >/dev/null 2>&1 || { echo "No hay remoto origin (github.com/Coru29/mate)." >&2; exit 1; }
 # Untracked files (like a notes file you just wrote) don't count; changes to tracked files do.
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "Hay cambios sin commitear." >&2; exit 1; }
@@ -50,7 +52,9 @@ fi
 scripts/dmg.sh
 # Releases must carry the project's signing certificate: installed copies only accept an update signed with it, and
 # it is what keeps macOS's "Permitir siempre" keychain answers. An ad-hoc build is never published.
-codesign -d -r- build/Mate.app 2>&1 | grep -q "certificate leaf" || { echo "El build no tiene la firma del proyecto (scripts/sign.sh)." >&2; exit 1; }
+# The leaf hash is pinned: a fork's or a stray identity with the same name never ships as an official release.
+LEAF='H"fc81037b045972372cab4f806fe5e28cbde83c20"'
+codesign -d -r- build/Mate.app 2>&1 | grep -qF "certificate leaf = $LEAF" || { echo "El build no tiene la firma del proyecto (Rambla Local Signing, $LEAF; scripts/sign.sh)." >&2; exit 1; }
 BUILT=$(plutil -extract CFBundleShortVersionString raw build/Mate.app/Contents/Info.plist)
 [ "$BUILT" = "$NEXT" ] || { echo "El build dice $BUILT y el release es $NEXT: no se publica." >&2; exit 1; }
 COMMIT=$(git rev-parse HEAD)
