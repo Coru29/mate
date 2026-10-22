@@ -36,3 +36,33 @@ public enum ClaudeProfile {
         return (uuid, try J.string(account, "email"))
     }
 }
+
+public enum ClaudeConfig {
+    /// `oauthAccount {accountUuid, emailAddress}` of Claude Code's `.claude.json`. Nil when there is no
+    /// `oauthAccount` (logged out); throws when the file is not valid JSON or the account has no uuid, so a
+    /// half-written file is never mistaken for a logout.
+    public static func oauthAccount(from data: Data) throws -> (uuid: String, email: String?)? {
+        let root = try J.object(data)
+        guard let account = try J.dict(root, "oauthAccount") else { return nil }
+        guard let uuid = try J.string(account, "accountUuid"), !uuid.isEmpty else {
+            throw ParseError.malformed("oauthAccount.accountUuid missing")
+        }
+        return (uuid, try J.string(account, "emailAddress"))
+    }
+}
+
+public enum ClaudeTokenResponse {
+    /// The token endpoint's `{access_token, refresh_token?, expires_in (s)}`. A missing refresh token keeps the
+    /// previous one (as Claude Code does); other fields of `previous` carry over.
+    public static func tokens(from data: Data, previous: OAuthTokens, now: Date) throws -> OAuthTokens {
+        let root = try J.object(data)
+        guard let access = try J.string(root, "access_token"), !access.isEmpty else {
+            throw ParseError.malformed("access_token missing")
+        }
+        var t = previous
+        t.accessToken = access
+        if let r = try J.string(root, "refresh_token"), !r.isEmpty { t.refreshToken = r }
+        t.expiresAt = try J.double(root, "expires_in").map { now.addingTimeInterval($0) }
+        return t
+    }
+}

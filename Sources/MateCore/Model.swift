@@ -23,6 +23,19 @@ public enum WindowKind: Codable, Hashable, Sendable {
     case monthlyBudget
     case dailyModel(String)
     case premiumRequests
+
+    /// Stable string form, for dictionary keys and file storage.
+    public var key: String {
+        switch self {
+        case .session: "session"
+        case .weekly: "weekly"
+        case .weeklyModel(let m): "weeklyModel:\(m)"
+        case .billingCycle: "billingCycle"
+        case .monthlyBudget: "monthlyBudget"
+        case .dailyModel(let m): "dailyModel:\(m)"
+        case .premiumRequests: "premiumRequests"
+        }
+    }
 }
 
 public struct LimitWindow: Codable, Hashable, Sendable {

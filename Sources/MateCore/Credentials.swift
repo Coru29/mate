@@ -60,13 +60,15 @@ public enum ClaudeCredentials {
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
     }
 
-    /// Keychain service holding Claude Code's credentials.
-    /// UNVERIFIED — confirm in Task 8: for a custom config dir the suffix is assumed to be the first 8 lowercase
-    /// hex chars of SHA-256 over the UTF-8 config dir path.
+    /// Keychain service holding Claude Code's credentials (keychain account = `$USER`).
+    /// Verified against Claude Code 2.1.308: with `CLAUDE_CONFIG_DIR` set (to anything non-empty, even `~/.claude`)
+    /// the suffix is `-` + the first 8 lowercase hex chars of SHA-256 over the variable's exact value, NFC-normalized;
+    /// unset, there is no suffix. Pass `nil` for the default dir and the raw `CLAUDE_CONFIG_DIR` value otherwise.
     public static func keychainService(configDir: String?) -> String {
         let base = "Claude Code-credentials"
         guard let dir = configDir, !dir.isEmpty else { return base }
-        let hex = SHA256.hash(data: Data(dir.utf8)).map { String(format: "%02x", $0) }.joined()
+        let nfc = dir.precomposedStringWithCanonicalMapping
+        let hex = SHA256.hash(data: Data(nfc.utf8)).map { String(format: "%02x", $0) }.joined()
         return base + "-" + hex.prefix(8)
     }
 }

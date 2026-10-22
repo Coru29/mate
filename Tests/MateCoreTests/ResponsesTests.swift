@@ -144,3 +144,35 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
     let w = try GeminiQuota.windows(from: Data(json.utf8), now: now)
     #expect(w.map(\.usedPercent) == [0, 100])
 }
+
+@Test func claudeConfigOAuthAccount() throws {
+    let data = Data(#"{"numStartups":3,"oauthAccount":{"accountUuid":"uuid-TEST","emailAddress":"me@example.com","organizationUuid":"org"}}"#.utf8)
+    let account = try #require(try ClaudeConfig.oauthAccount(from: data))
+    #expect(account.uuid == "uuid-TEST")
+    #expect(account.email == "me@example.com")
+}
+
+@Test func claudeConfigWithoutOAuthAccountIsLoggedOut() throws {
+    #expect(try ClaudeConfig.oauthAccount(from: Data(#"{"numStartups":3}"#.utf8)) == nil)
+    #expect(try ClaudeConfig.oauthAccount(from: Data(#"{"oauthAccount":null}"#.utf8)) == nil)
+}
+
+/// A half-written file must throw (dir not scanned), not look like a logout.
+@Test func claudeConfigTruncatedThrows() {
+    #expect(throws: ParseError.self) { try ClaudeConfig.oauthAccount(from: Data(#"{"oauthAccount":{"accountUu"#.utf8)) }
+    #expect(throws: ParseError.self) { try ClaudeConfig.oauthAccount(from: Data(#"{"oauthAccount":{"emailAddress":"x"}}"#.utf8)) }
+}
+
+@Test func claudeTokenRefreshResponse() throws {
+    let previous = OAuthTokens(accessToken: "old", refreshToken: "rt-old", expiresAt: now, extra: ["subscriptionType": "max"])
+    let rotated = try ClaudeTokenResponse.tokens(
+        from: Data(#"{"access_token":"new","refresh_token":"rt-new","expires_in":28800,"token_type":"Bearer"}"#.utf8),
+        previous: previous, now: now)
+    #expect(rotated == OAuthTokens(accessToken: "new", refreshToken: "rt-new", expiresAt: now.addingTimeInterval(28_800),
+                                   extra: ["subscriptionType": "max"]))
+    // Claude Code keeps the old refresh token when the response omits it.
+    let kept = try ClaudeTokenResponse.tokens(from: Data(#"{"access_token":"new","expires_in":60}"#.utf8),
+                                              previous: previous, now: now)
+    #expect(kept.refreshToken == "rt-old")
+    #expect(throws: ParseError.self) { try ClaudeTokenResponse.tokens(from: Data(#"{"error":"invalid_grant"}"#.utf8), previous: previous, now: now) }
+}

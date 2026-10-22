@@ -87,3 +87,11 @@ private func kinds(_ events: [AlertEvent]) -> [AlertEvent.Kind] { events.map(\.k
     #expect(restored.evaluate(snap(85), thresholds: thresholds).isEmpty)
     #expect(kinds(restored.evaluate(snap(91), thresholds: thresholds)) == [.threshold(90)])
 }
+
+@Test func windowKindKeysAreStableAndDistinct() {
+    let kinds: [WindowKind] = [.session, .weekly, .weeklyModel("Opus"), .weeklyModel("Sonnet"), .billingCycle,
+                               .monthlyBudget, .dailyModel("gemini-2.5-pro"), .premiumRequests]
+    #expect(Set(kinds.map(\.key)).count == kinds.count)
+    #expect(WindowKind.weeklyModel("Opus").key == "weeklyModel:Opus")
+    #expect(WindowKind.session.key == "session")
+}

@@ -81,15 +81,5 @@ public struct AlertEngine: Codable, Sendable {
         return false
     }
 
-    private static func label(_ kind: WindowKind) -> String {
-        switch kind {
-        case .session: "session"
-        case .weekly: "weekly"
-        case .weeklyModel(let m): "weeklyModel:\(m)"
-        case .billingCycle: "billingCycle"
-        case .monthlyBudget: "monthlyBudget"
-        case .dailyModel(let m): "dailyModel:\(m)"
-        case .premiumRequests: "premiumRequests"
-        }
-    }
+    private static func label(_ kind: WindowKind) -> String { kind.key }
 }

@@ -43,6 +43,13 @@ func fixture(_ name: String) throws -> Data {
     #expect(ClaudeCredentials.keychainService(configDir: "/tmp/claude-alt") == "Claude Code-credentials-04923786")
 }
 
+/// Claude Code hashes `CLAUDE_CONFIG_DIR.normalize("NFC")`, so a decomposed path must hash like its composed form.
+@Test func claudeKeychainServiceNormalizesToNFC() {
+    let decomposed = "/tmp/cafe\u{301}"
+    #expect(ClaudeCredentials.keychainService(configDir: decomposed) == "Claude Code-credentials-0873cca0")
+    #expect(ClaudeCredentials.keychainService(configDir: "/tmp/caf\u{e9}") == "Claude Code-credentials-0873cca0")
+}
+
 @Test func codexCredentialsDecodeAndEncode() throws {
     let original = try fixture("codex-auth.json")
     var t = try CodexCredentials.decode(original)
