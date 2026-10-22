@@ -4,6 +4,7 @@ import MateCore
 /// Claude Code. Endpoints, client id, keychain naming and file layout verified against Claude Code 2.1.308.
 final class ClaudeProvider: Provider, @unchecked Sendable {
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    static let profileURL = URL(string: "https://api.anthropic.com/api/oauth/profile")!
     static let tokenURL = URL(string: "https://platform.claude.com/v1/oauth/token")!
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let betaHeader = "oauth-2025-04-20"
@@ -113,6 +114,16 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
         if status == 400 { throw ProviderError.unauthorized }
         try ProviderError.check(status: status)
         return try ClaudeTokenResponse.tokens(from: data, previous: tokens, now: Date())
+    }
+
+    /// The signed-in account of an access token (for "Agregar cuenta…").
+    static func profile(accessToken: String) async throws -> (uuid: String, email: String?) {
+        var req = URLRequest(url: profileURL)
+        req.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, status) = try await HTTP.json(req)
+        try ProviderError.check(status: status)
+        return try ClaudeProfile.identity(from: data)
     }
 
     // MARK: Logs

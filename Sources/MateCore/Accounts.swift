@@ -105,8 +105,10 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     /// to Mate only when its `agentConfigDir` is in `scannedDirs` and its identity
     /// was not observed there. Only that provider's accounts are touched.
     /// Emits one `storeShadow` per account, for the session in its `agentConfigDir`.
+    /// `sourceDirs` are the config dirs the user added as sources: an account first observed in one of them gets
+    /// `.configDir(dir)` as its source (`.detected` otherwise).
     public mutating func reconcile(provider: ProviderID, observed: [ObservedSession],
-                                   scannedDirs: Set<String>) -> [OwnershipAction] {
+                                   scannedDirs: Set<String>, sourceDirs: Set<String> = []) -> [OwnershipAction] {
         var actions: [OwnershipAction] = []
         let sessions = observed.filter { $0.provider == provider }
         var done = Set<String>()
@@ -129,7 +131,8 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
             } else {
                 accounts.append(Account(id: id, provider: provider, identity: s.identity, email: email,
                                         name: email ?? s.identity, colorIndex: nextColor(provider),
-                                        source: .detected, owner: .agent, agentConfigDir: dirs[0]))
+                                        source: sourceDirs.contains(dirs[0]) ? .configDir(dirs[0]) : .detected,
+                                        owner: .agent, agentConfigDir: dirs[0]))
                 i = accounts.count - 1
             }
             actions.append(.storeShadow(accountID: id, configDir: accounts[i].agentConfigDir ?? dirs[0]))
@@ -149,12 +152,15 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
         (accounts.filter { $0.provider == provider }.map(\.colorIndex).max() ?? -1) + 1
     }
 
-    /// An account added through Mate's own login: Mate owns its tokens.
+    /// An account added through Mate's own login: Mate owns its tokens. A known identity is updated, not
+    /// duplicated, and keeps its owner and source: when the agent owns it the caller discards the new tokens; when
+    /// Mate owns it the caller replaces its copy, which revives an expired account.
     @discardableResult
     public mutating func addLogin(provider: ProviderID, identity: String, email: String?) -> Account {
         let id = Self.accountID(provider: provider, identity: identity)
         if let i = accounts.firstIndex(where: { $0.id == id }) {
             if let e = email { accounts[i].email = e }
+            if accounts[i].owner == .mate { accounts[i].status = .ok }
             return accounts[i]
         }
         let a = Account(id: id, provider: provider, identity: identity, email: email,

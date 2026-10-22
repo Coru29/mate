@@ -52,7 +52,7 @@ public enum ClaudeConfig {
 }
 
 public enum ClaudeTokenResponse {
-    /// The token endpoint's `{access_token, refresh_token?, expires_in (s)}`. A missing refresh token keeps the
+    /// The token endpoint's `{access_token, refresh_token?, expires_in (s), scope?}`. A missing refresh token keeps the
     /// previous one (as Claude Code does); other fields of `previous` carry over.
     public static func tokens(from data: Data, previous: OAuthTokens, now: Date) throws -> OAuthTokens {
         let root = try J.object(data)
@@ -63,6 +63,7 @@ public enum ClaudeTokenResponse {
         t.accessToken = access
         if let r = try J.string(root, "refresh_token"), !r.isEmpty { t.refreshToken = r }
         t.expiresAt = try J.double(root, "expires_in").map { now.addingTimeInterval($0) }
+        if let scope = try J.string(root, "scope"), !scope.isEmpty { t.extra["scopes"] = scope }
         return t
     }
 }

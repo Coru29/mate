@@ -47,6 +47,9 @@ final class UsageStore: ObservableObject {
     private var deniedDirs: Set<String> = []
     /// In-flight agent-credential reads per "provider|configDir", shared so at most one keychain prompt is pending.
     private var credentialReads: [String: Task<Data?, Error>] = [:]
+    /// Config dirs the user added as sources (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), per provider raw value. Kept
+    /// apart from the accounts so an empty dir stays watched.
+    private var configDirs: [String: [String]]
 
     init(providers: [any Provider], vault: TokenVault, persistence: Persistence) {
         self.providers = providers
@@ -57,16 +60,20 @@ final class UsageStore: ObservableObject {
         samplesByKey = persistence.load([String: [Sample]].self, "samples") ?? [:]
         alertEngine = persistence.load(AlertEngine.self, "alerts") ?? AlertEngine()
         switchHistory = persistence.load(SwitchHistory.self, "switchHistory") ?? SwitchHistory()
+        configDirs = persistence.load([String: [String]].self, "configDirs") ?? [:]
         let state = persistence.loadIndexState()
         aggregates = state.aggregates
         indexer = LogIndexer(cursors: state.cursors)
         accounts = registry.accounts
         for (id, s) in snapshots { fetchState[id] = FetchState(lastAttempt: s.fetchedAt) }
         for p in providers {
-            p.extraConfigDirs = registry.accounts.compactMap {
-                guard $0.provider == p.id, case .configDir(let dir) = $0.source else { return nil }
+            let fromAccounts = registry.accounts.compactMap { a -> String? in
+                guard a.provider == p.id, case .configDir(let dir) = a.source else { return nil }
                 return dir
             }
+            var dirs = configDirs[p.id.rawValue] ?? []
+            for d in fromAccounts where !dirs.contains(d) { dirs.append(d) }
+            p.extraConfigDirs = dirs
         }
         pruneSamples(now: Date())
     }
@@ -74,8 +81,7 @@ final class UsageStore: ObservableObject {
     // MARK: Public API
 
     func start() {
-        let paths = providers.flatMap { $0.watchedPaths + $0.sessionFiles }
-        let w = FileWatcher(paths: paths) { [weak self] changed in
+        let w = FileWatcher(paths: watchedPaths) { [weak self] changed in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.filesChanged(changed) } }
         }
         w.start()
@@ -90,6 +96,8 @@ final class UsageStore: ObservableObject {
             scheduleFetches()
         }
     }
+
+    private var watchedPaths: [String] { providers.flatMap { $0.watchedPaths + $0.sessionFiles } }
 
     private func startIndexing(_ p: any Provider) {
         guard indexStarted.insert(p.id).inserted else { return }
@@ -155,6 +163,79 @@ final class UsageStore: ObservableObject {
         }
     }
 
+    // MARK: Adding accounts
+
+    enum AddError: LocalizedError {
+        case unsupported(ProviderID)
+        case notADirectory(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupported(let p): String(localized: "\(p.displayName) no permite agregar cuentas desde Mate.")
+            case .notADirectory(let path): String(localized: "\(path) no es una carpeta.")
+            }
+        }
+    }
+
+    /// "Agregar cuenta…": the provider's own sign-in. The new account is Mate-owned (source `.login`). A known
+    /// identity is updated instead of duplicated: Mate's copy is replaced, or, when the agent holds that account,
+    /// the new tokens are discarded (the agent owns them). Fetches the account once before returning.
+    @discardableResult
+    func addLogin(provider id: ProviderID) async throws -> Account {
+        guard let p = provider(id) else { throw AddError.unsupported(id) }
+        let login: (OAuthTokens, identity: String, email: String?)
+        switch id {
+        case .claude: login = try await OAuthLogin.claude()
+        case .codex: login = try await OAuthLogin.codex()
+        default: throw AddError.unsupported(id)
+        }
+        // Current ownership first: the identity may be the one the agent is logged in with right now.
+        await reconcile(p)
+        let accountID = AccountRegistry.accountID(provider: id, identity: login.identity)
+        if registry.accounts.first(where: { $0.id == accountID })?.owner != .agent {
+            try vault.write(id, accountID: accountID, data: p.encodeCredentials(login.0, preserving: nil))
+        } else {
+            Log.info("\(accountID): signed in, but the agent holds this account; its tokens stay the agent's")
+        }
+        let account = registry.addLogin(provider: id, identity: login.identity, email: login.email)
+        commitRegistry()
+        Log.info("\(account.id): added by sign-in (owner \(account.owner == .agent ? "agent" : "mate"))")
+        fetchState[account.id] = FetchState()
+        if selectedAccountID == nil { selectedAccountID = account.id }
+        await fetch(account.id)
+        return registry.accounts.first { $0.id == account.id } ?? account
+    }
+
+    /// Adds a `CLAUDE_CONFIG_DIR` / `CODEX_HOME` folder as a source: watched like the default one from now on,
+    /// and accounts first seen in it get `.configDir(path)` as their source. An empty folder simply has no accounts.
+    func addConfigDir(provider id: ProviderID, path: String) async throws {
+        guard let p = provider(id), id == .claude || id == .codex else { throw AddError.unsupported(id) }
+        let dir = Self.canonicalDir(path)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else {
+            throw AddError.notADirectory(path)
+        }
+        let defaultDir = Self.canonicalDir(id == .claude ? ClaudeProvider.defaultDir : CodexProvider.defaultDir)
+        var dirs = configDirs[id.rawValue] ?? []
+        guard dir != defaultDir, !dirs.contains(dir), !p.extraConfigDirs.contains(dir) else { return }
+        dirs.append(dir)
+        configDirs[id.rawValue] = dirs
+        persistence.save("configDirs") { [unowned self] in configDirs }
+        p.extraConfigDirs += [dir]
+        Log.info("\(id.rawValue): watching config dir \(dir)")
+        watcher?.setPaths(watchedPaths)
+        await reconcile(p)
+        // Index the new dir's logs (reconcile already recorded who is logged in there, for attribution).
+        let newLogs = p.watchedPaths.filter { $0.hasPrefix(dir + "/") }
+        indexer.index(p, paths: newLogs, fullScan: false, qos: .utility) { [weak self] events, cursors in
+            self?.ingest(events, cursors: cursors)
+        }
+    }
+
+    static func canonicalDir(_ path: String) -> String {
+        LogDirs.canonicalConfigDir(path, home: NSHomeDirectory(), cwd: FileManager.default.currentDirectoryPath)
+    }
+
     func samples(for accountID: String, window: WindowKind) -> [Sample] {
         samplesByKey[Self.sampleKey(accountID, window)] ?? []
     }
@@ -174,7 +255,8 @@ final class UsageStore: ObservableObject {
             reconcileAgain.remove(p.id)
             let scan = await p.observeSessions()
             let before = Dictionary(uniqueKeysWithValues: registry.accounts.map { ($0.id, ($0.owner, $0.agentConfigDir)) })
-            let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs)
+            let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs,
+                                             sourceDirs: Set(configDirs[p.id.rawValue] ?? []))
             commitRegistry()
             recordSwitches(scan.sessions, provider: p.id)
             startIndexing(p)

@@ -42,3 +42,36 @@ public enum CodexUsage {
         return out
     }
 }
+
+public enum CodexTokenResponse {
+    /// `{access_token, refresh_token?, id_token?}` from `auth.openai.com/oauth/token` (exchange or refresh). Missing
+    /// fields keep `previous`'s; the expiry comes from the access token's `exp`, the account id from the id_token.
+    public static func tokens(from data: Data, previous: OAuthTokens) throws -> OAuthTokens {
+        let root = try J.object(data)
+        guard let access = try J.string(root, "access_token"), !access.isEmpty else {
+            throw ParseError.malformed("access_token missing")
+        }
+        var t = previous
+        t.accessToken = access
+        t.expiresAt = JWT.expiry(access)
+        if let r = try J.string(root, "refresh_token"), !r.isEmpty { t.refreshToken = r }
+        if let id = try J.string(root, "id_token"), !id.isEmpty {
+            t.extra["id_token"] = id
+            if let identity = CodexIdentity.from(idToken: id) { t.extra["account_id"] = identity.accountID }
+        }
+        return t
+    }
+}
+
+public enum CodexLogTail {
+    /// The windows of the last `token_count` event with `rate_limits` in `tail` (the end of a rollout file; a
+    /// partial first line is ignored). Nil when there is none.
+    public static func latestRateLimits(in tail: Data) -> [LimitWindow]? {
+        let lines = tail.split(separator: 0x0A, omittingEmptySubsequences: true)
+        for line in lines.reversed() {
+            var parser = CodexLogParser()
+            if let w = parser.parse(Data(line), sessionID: "").rateLimits, !w.isEmpty { return w }
+        }
+        return nil
+    }
+}

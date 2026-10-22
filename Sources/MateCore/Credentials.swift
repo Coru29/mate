@@ -43,6 +43,7 @@ public enum ClaudeCredentials {
         }
         var extra: [String: String] = [:]
         if let s = try J.string(o, "subscriptionType") { extra["subscriptionType"] = s }
+        if let scopes = try J.array(o, "scopes") { extra["scopes"] = scopes.compactMap { $0 as? String }.joined(separator: " ") }
         let expires = try J.double(o, "expiresAt").map { Date(timeIntervalSince1970: $0 / 1000) }
         return OAuthTokens(accessToken: access, refreshToken: try J.string(o, "refreshToken"),
                            expiresAt: expires, extra: extra)
@@ -56,6 +57,7 @@ public enum ClaudeCredentials {
         if let r = t.refreshToken { o["refreshToken"] = r }
         if let e = t.expiresAt { o["expiresAt"] = (e.timeIntervalSince1970 * 1000).rounded() }
         if let s = t.extra["subscriptionType"] { o["subscriptionType"] = s }
+        if let s = t.extra["scopes"] { o["scopes"] = s.split(separator: " ").map(String.init) }
         root["claudeAiOauth"] = o
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
     }
@@ -94,6 +96,36 @@ public enum CodexCredentials {
         root["tokens"] = o
         root["last_refresh"] = ISO8601DateFormatter().string(from: now)
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+    }
+}
+
+/// The ChatGPT identity in a Codex `id_token`: `https://api.openai.com/auth.chatgpt_account_id`, and the email
+/// from `email` (or `https://api.openai.com/profile.email`).
+public enum CodexIdentity {
+    public static func from(idToken: String) -> (accountID: String, email: String?)? {
+        guard let claims = JWT.claims(idToken),
+              let auth = claims["https://api.openai.com/auth"] as? [String: Any],
+              let account = auth["chatgpt_account_id"] as? String, !account.isEmpty else { return nil }
+        let email = claims["email"] as? String
+            ?? (claims["https://api.openai.com/profile"] as? [String: Any])?["email"] as? String
+        return (account, email)
+    }
+}
+
+/// Codex's `auth.json` (a plain file: reading it never prompts).
+public enum CodexAuthFile {
+    /// The ChatGPT session, or nil when there is none (logged out, or API-key mode). Throws when the file is not
+    /// valid JSON or holds tokens without an identity, so a half-written file is never mistaken for a logout.
+    public static func session(from data: Data) throws -> (identity: String, email: String?)? {
+        let root = try J.object(data)
+        guard let t = try J.dict(root, "tokens"), try J.string(t, "access_token") != nil else { return nil }
+        if let id = try J.string(t, "id_token"), let identity = CodexIdentity.from(idToken: id) {
+            return (identity.accountID, identity.email)
+        }
+        guard let account = try J.string(t, "account_id"), !account.isEmpty else {
+            throw ParseError.malformed("tokens without an account id")
+        }
+        return (account, nil)
     }
 }
 

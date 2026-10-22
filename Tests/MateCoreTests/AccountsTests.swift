@@ -232,3 +232,29 @@ private func obs(_ identity: String, _ dir: String = "~/.claude", email: String?
     #expect(FetchPolicy.onUnauthorized(owner: .mate, alreadyRefreshed: false) == .refreshAndRetry)
     #expect(FetchPolicy.onUnauthorized(owner: .mate, alreadyRefreshed: true) == .markExpired)
 }
+
+@Test func loginOfKnownIdentityUpdatesInsteadOfDuplicating() {
+    var r = AccountRegistry()
+    _ = r.reconcile(provider: .claude, observed: [obs("a")], scannedDirs: ["~/.claude"])
+    // Agent-owned: the login changes nothing about ownership (the caller discards the new tokens).
+    let a = r.addLogin(provider: .claude, identity: "a", email: "a@x.com")
+    #expect(a.owner == .agent && a.source == .detected && a.email == "a@x.com")
+    // A Mate copy that had died is alive again after a new login.
+    let m = r.addLogin(provider: .claude, identity: "m", email: nil)
+    r.accounts[r.accounts.firstIndex { $0.id == m.id }!].status = .expired
+    let again = r.addLogin(provider: .claude, identity: "m", email: nil)
+    #expect(again.status == .ok && again.owner == .mate && again.source == .login)
+    #expect(r.accounts.count == 2)
+}
+
+@Test func accountsFirstSeenInAConfigDirSourceGetThatSource() {
+    var r = AccountRegistry()
+    _ = r.reconcile(provider: .claude, observed: [obs("a"), obs("w", "/Users/u/.claude-work")],
+                    scannedDirs: ["~/.claude", "/Users/u/.claude-work"], sourceDirs: ["/Users/u/.claude-work"])
+    #expect(r.accounts.first { $0.identity == "a" }?.source == .detected)
+    #expect(r.accounts.first { $0.identity == "w" }?.source == .configDir("/Users/u/.claude-work"))
+    // An account already known keeps its source when it later shows up in the config dir.
+    _ = r.reconcile(provider: .claude, observed: [obs("a", "/Users/u/.claude-work")],
+                    scannedDirs: ["~/.claude", "/Users/u/.claude-work"], sourceDirs: ["/Users/u/.claude-work"])
+    #expect(r.accounts.first { $0.identity == "a" }?.source == .detected)
+}

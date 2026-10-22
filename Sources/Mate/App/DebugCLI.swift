@@ -5,11 +5,76 @@ import MateCore
 /// and `--dump` (fetch once, print non-secret fields, exit). UI checks: `--open-panel` opens the panel after launch
 /// (and closes it 10 s later unless the mouse is over it),
 /// `--demo-alert` drops a sample alert.
+/// Accounts (until Settings exists): `--add-account claude|codex` runs that provider's sign-in, stores the account,
+/// fetches it once, prints it and exits; `--add-config-dir claude|codex <path>` adds a config-dir source, prints the
+/// provider's accounts and exits.
 @MainActor
 enum DebugCLI {
     static var isFake: Bool { CommandLine.arguments.contains("--fake") }
     static var isDump: Bool { CommandLine.arguments.contains("--dump") }
     static var isIndex: Bool { CommandLine.arguments.contains("--index") }
+
+    /// The value after `flag`, if any.
+    private static func value(after flag: String, offset: Int = 1) -> String? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: flag), i + offset < args.count else { return nil }
+        return args[i + offset]
+    }
+
+    /// `--add-account <provider>`.
+    static var addAccountProvider: ProviderID? {
+        guard CommandLine.arguments.contains("--add-account") else { return nil }
+        return parseProvider(value(after: "--add-account"))
+    }
+
+    /// `--add-config-dir <provider> <path>`.
+    static var addConfigDir: (ProviderID, String)? {
+        guard CommandLine.arguments.contains("--add-config-dir") else { return nil }
+        guard let p = parseProvider(value(after: "--add-config-dir")), let path = value(after: "--add-config-dir", offset: 2) else {
+            print("usage: Mate --add-config-dir claude|codex <path>")
+            exit(2)
+        }
+        return (p, path)
+    }
+
+    private static func parseProvider(_ s: String?) -> ProviderID? {
+        guard let s, let p = ProviderID(rawValue: s), p == .claude || p == .codex else {
+            print("expected claude or codex")
+            exit(2)
+        }
+        return p
+    }
+
+    /// Runs `--add-account` (the app must be running: the sign-in shows a window) and exits.
+    static func addAccount(_ provider: ProviderID) async -> Never {
+        let store = makeStore()
+        do {
+            let a = try await store.addLogin(provider: provider)
+            store.flush()
+            print(render(accounts: [a], snapshots: store.snapshots))
+            exit(0)
+        } catch {
+            store.flush()
+            print("sign-in failed: \((error as? LocalizedError)?.errorDescription ?? String(describing: error))")
+            exit(1)
+        }
+    }
+
+    /// Runs `--add-config-dir` and exits.
+    static func addConfigDir(_ provider: ProviderID, path: String) async -> Never {
+        let store = makeStore()
+        do {
+            try await store.addConfigDir(provider: provider, path: path)
+            store.flush()
+            let accounts = store.accounts.filter { $0.provider == provider }
+            print("watching \(UsageStore.canonicalDir(path)) for \(provider.rawValue)")
+            print(render(accounts: accounts, snapshots: store.snapshots))
+            exit(0)
+        } catch {
+            print("could not add the folder: \((error as? LocalizedError)?.errorDescription ?? String(describing: error))")
+            exit(1)
+        }
+    }
 
     /// `--dump --day YYYY-MM-DD`: the day to print per-provider/per-model totals for (log reading only).
     static var dumpDay: String? {
@@ -84,7 +149,7 @@ enum DebugCLI {
 
     static func makeStore() -> UsageStore {
         let fake = isFake
-        let providers: [any Provider] = fake ? [FakeProvider()] : [ClaudeProvider()]
+        let providers: [any Provider] = fake ? [FakeProvider()] : [ClaudeProvider(), CodexProvider()]
         let vault: TokenVault = fake ? MemoryVault() : KeychainVault()
         return UsageStore(providers: providers, vault: vault, persistence: Persistence(dir: Persistence.defaultDir(fake: fake)))
     }
@@ -97,19 +162,31 @@ enum DebugCLI {
         exit(0)
     }
 
-    /// `--index`: indexes the Claude logs only (no keychain, no network) into the data dir, prints totals and peak
-    /// memory, and exits. For measuring the first-launch scan.
+    /// The provider whose logs `--index` and `--dump --day` read: `--index codex` / `--logs codex`, Claude otherwise.
+    private static func logProvider() -> any Provider {
+        let name = value(after: isIndex ? "--index" : "--logs")
+        return name == "codex" ? CodexProvider() : ClaudeProvider()
+    }
+
+    /// `--index [codex]`: indexes one provider's logs (no keychain, no network) into the data dir, prints totals,
+    /// the events per config dir (account attribution) and peak memory, and exits. For measuring the first-launch scan.
     static func index() -> Never {
         requireDataDir()
         let persistence = Persistence(dir: Persistence.defaultDir(fake: false))
-        let provider = ClaudeProvider()
+        let provider = logProvider()
         let state = persistence.loadIndexState()
         let indexer = LogIndexer(cursors: state.cursors)
         var aggregates = state.aggregates
         var count = 0
+        var perDir: [String: Int] = [:]
+        var perModel: [String: Int] = [:]
         let started = Date()
         indexer.index(provider, paths: provider.watchedPaths, fullScan: true, qos: .utility, deliver: { events, cursors in
-            for e in events where aggregates.add(e) { count += 1 }
+            for e in events where aggregates.add(e) {
+                count += 1
+                perDir[e.logDir ?? "(none)", default: 0] += 1
+                perModel[e.model, default: 0] += 1
+            }
             persistence.save("aggregates") { aggregates }
             persistence.save("cursors") { cursors }
         }, done: {
@@ -119,20 +196,22 @@ enum DebugCLI {
             let today = aggregates.today(now: Date()).values.reduce(0, +)
             print("indexed \(count) events in \(String(format: "%.1f", Date().timeIntervalSince(started))) s; "
                   + "tokens today \(today); peak RSS \(usage.ru_maxrss / 1_048_576) MB")
+            for (dir, n) in perDir.sorted(by: { $0.key < $1.key }) { print("  dir \(dir): \(n) events") }
+            for (model, n) in perModel.sorted(by: { $0.key < $1.key }) { print("  model \(model): \(n) events") }
             exit(0)
         })
         dispatchMain()
     }
 
-    /// `--dump --day YYYY-MM-DD`: indexes the Claude logs into the data dir (no keychain, no network; use
-    /// `MATE_DATA_DIR`), prints that local day's tokens per provider and per model, and exits.
+    /// `--dump --day YYYY-MM-DD`: indexes the Claude logs (Codex with `--logs codex`) into the data dir (no keychain,
+    /// no network; use `MATE_DATA_DIR`), prints that local day's tokens per provider and per model, and exits.
     static func dumpDay(_ day: String) -> Never {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         guard let date = f.date(from: day) else { print("bad day '\(day)', expected YYYY-MM-DD"); exit(2) }
         requireDataDir()
         let persistence = Persistence(dir: Persistence.defaultDir(fake: false))
-        let provider = ClaudeProvider()
+        let provider = logProvider()
         let state = persistence.loadIndexState()
         let indexer = LogIndexer(cursors: state.cursors)
         var aggregates = state.aggregates

@@ -76,3 +76,24 @@
 "Estimado con el precio de lista de la API; no es lo que cobra tu plan. Solo cuentan los logs locales." = "Estimado con el precio de lista de la API; no es lo que cobra tu plan. Solo cuentan los logs locales.";
 "Día" = "Día";
 "Proveedor" = "Proveedor";
+
+/* Accounts: sign-in and config dirs */
+"%@ no permite agregar cuentas desde Mate." = "%@ no permite agregar cuentas desde Mate.";
+"%@ no es una carpeta." = "%@ no es una carpeta.";
+"Agregar cuenta de Claude" = "Agregar cuenta de Claude";
+"Entrá con tu cuenta en el navegador. Al terminar, Anthropic te muestra un código: copialo y pegalo acá." = "Entrá con tu cuenta en el navegador. Al terminar, Anthropic te muestra un código: copialo y pegalo acá.";
+"Agregar cuenta de Codex" = "Agregar cuenta de Codex";
+"Entrá con tu cuenta de ChatGPT en el navegador. Mate sigue solo cuando termines." = "Entrá con tu cuenta de ChatGPT en el navegador. Mate sigue solo cuando termines.";
+"Código" = "Código";
+"Abrir el navegador de nuevo" = "Abrir el navegador de nuevo";
+"Cancelar" = "Cancelar";
+"Continuar" = "Continuar";
+"El código está incompleto. Copialo entero, con el # del medio." = "El código está incompleto. Copialo entero, con el # del medio.";
+"Ese código es de otro inicio de sesión. Usá el de la página que abrió Mate." = "Ese código es de otro inicio de sesión. Usá el de la página que abrió Mate.";
+"El inicio de sesión no se completó." = "El inicio de sesión no se completó.";
+"Pasaron 5 minutos sin terminar el inicio de sesión." = "Pasaron 5 minutos sin terminar el inicio de sesión.";
+"Inicio de sesión cancelado." = "Inicio de sesión cancelado.";
+"Hay otro inicio de sesión de Codex abierto (el puerto 1455 está ocupado). Cerralo y probá de nuevo." = "Hay otro inicio de sesión de Codex abierto (el puerto 1455 está ocupado). Cerralo y probá de nuevo.";
+"Este inicio de sesión no es el que abrió Mate." = "Este inicio de sesión no es el que abrió Mate.";
+"Listo, ya podés volver a Mate" = "Listo, ya podés volver a Mate";
+"desde el log" = "desde el log";

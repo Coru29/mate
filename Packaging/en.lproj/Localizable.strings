@@ -75,3 +75,24 @@
 "Estimado con el precio de lista de la API; no es lo que cobra tu plan. Solo cuentan los logs locales." = "Estimated at the API list price; not what your plan charges. Only local logs count.";
 "Día" = "Day";
 "Proveedor" = "Provider";
+
+/* Accounts: sign-in and config dirs */
+"%@ no permite agregar cuentas desde Mate." = "%@ does not support adding accounts from Mate.";
+"%@ no es una carpeta." = "%@ is not a folder.";
+"Agregar cuenta de Claude" = "Add Claude account";
+"Entrá con tu cuenta en el navegador. Al terminar, Anthropic te muestra un código: copialo y pegalo acá." = "Sign in with your account in the browser. When you finish, Anthropic shows you a code: copy it and paste it here.";
+"Agregar cuenta de Codex" = "Add Codex account";
+"Entrá con tu cuenta de ChatGPT en el navegador. Mate sigue solo cuando termines." = "Sign in with your ChatGPT account in the browser. Mate continues on its own when you finish.";
+"Código" = "Code";
+"Abrir el navegador de nuevo" = "Open the browser again";
+"Cancelar" = "Cancel";
+"Continuar" = "Continue";
+"El código está incompleto. Copialo entero, con el # del medio." = "The code is incomplete. Copy all of it, including the # in the middle.";
+"Ese código es de otro inicio de sesión. Usá el de la página que abrió Mate." = "That code is from another sign-in. Use the one from the page Mate opened.";
+"El inicio de sesión no se completó." = "The sign-in was not completed.";
+"Pasaron 5 minutos sin terminar el inicio de sesión." = "5 minutes went by without finishing the sign-in.";
+"Inicio de sesión cancelado." = "Sign-in cancelled.";
+"Hay otro inicio de sesión de Codex abierto (el puerto 1455 está ocupado). Cerralo y probá de nuevo." = "Another Codex sign-in is open (port 1455 is taken). Close it and try again.";
+"Este inicio de sesión no es el que abrió Mate." = "This sign-in is not the one Mate opened.";
+"Listo, ya podés volver a Mate" = "Done, you can go back to Mate";
+"desde el log" = "from the log";
