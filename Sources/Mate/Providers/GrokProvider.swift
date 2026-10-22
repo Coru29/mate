@@ -34,6 +34,21 @@ final class GrokProvider: Provider, @unchecked Sendable {
         try Keychain.write(service: service, account: account, data: Data(key.utf8))
     }
 
+    /// The team whose key is stored, from the item's attributes (the key itself is not read).
+    static var storedTeamID: String? {
+        let prefix = ProviderID.grok.rawValue + ":"
+        return Keychain.accountNames(service: service).first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+    }
+
+    /// Deletes every stored Grok key (Mate's own items).
+    static func deleteKeys() throws {
+        for name in Keychain.accountNames(service: service) { try Keychain.delete(service: service, account: name) }
+    }
+
+    func accountRemoved(_ account: Account) throws {
+        try Keychain.delete(service: Self.service, account: account.id)
+    }
+
     func observeSessions() async -> SessionScan {
         let dir = Self.sessionDir
         guard Self.budget > 0 else { return SessionScan(sessions: [], scannedDirs: [dir]) }

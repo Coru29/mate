@@ -84,6 +84,7 @@ final class UsageStore: ObservableObject {
     // MARK: Public API
 
     func start() {
+        guard watcher == nil else { return }
         let w = FileWatcher(paths: watchedPaths) { [weak self] changed in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.filesChanged(changed) } }
         }
@@ -178,6 +179,71 @@ final class UsageStore: ObservableObject {
             fetchState[a.id]?.failures = 0
             await fetch(a.id)
         }
+    }
+
+    /// Who is logged in where, for the welcome guide: each provider's sessions read from files and keychain
+    /// attributes only (no access prompt, no token used), without touching the registry.
+    func detectSessions() async -> [ProviderID: [ObservedSession]] {
+        var out: [ProviderID: [ObservedSession]] = [:]
+        for p in providers { out[p.id, default: []] += await p.observeSessions().sessions }
+        return out
+    }
+
+    // MARK: Editing accounts (Settings)
+
+    /// A blank name goes back to the email (or identity).
+    func renameAccount(_ id: String, to name: String) {
+        guard let i = registry.accounts.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let a = registry.accounts[i]
+        registry.accounts[i].name = trimmed.isEmpty ? (a.email ?? a.identity) : trimmed
+        commitRegistry()
+    }
+
+    func setAccountColor(_ id: String, _ index: Int) {
+        guard let i = registry.accounts.firstIndex(where: { $0.id == id }) else { return }
+        registry.accounts[i].colorIndex = index
+        commitRegistry()
+    }
+
+    /// A hidden account is neither shown nor fetched; showing it again fetches it.
+    func setAccountHidden(_ id: String, _ hidden: Bool) {
+        guard let i = registry.accounts.firstIndex(where: { $0.id == id }), registry.accounts[i].hidden != hidden else { return }
+        registry.accounts[i].hidden = hidden
+        commitRegistry()
+        if selectedAccountID == id && hidden { selectedAccountID = registry.accounts.first { !$0.hidden }?.id }
+        if hidden { scheduleFetches() } else { Task { await fetch(id) } }
+    }
+
+    /// Deletes an account: Mate's copy of its tokens (and the provider's own stored key, Grok's), its snapshot,
+    /// samples and alert state. The agent's own session is never touched, so an account the agent is logged in to
+    /// comes back on the next look at its files.
+    func removeAccount(_ id: String) {
+        guard let account = registry.accounts.first(where: { $0.id == id }) else { return }
+        let p = provider(account.provider)
+        var drop = registry.remove(id).compactMap { action -> String? in
+            if case .dropMateCopy(let accountID) = action { return accountID }
+            return nil
+        }
+        // The shadow copy kept for an agent-owned account is Mate's own item too.
+        if account.owner == .agent && p?.agentOnly == false { drop.append(id) }
+        for accountID in drop {
+            do { try vault.delete(account.provider, accountID: accountID) } catch { Log.error("vault delete \(accountID): \(error)") }
+        }
+        do { try p?.accountRemoved(account) } catch { Log.error("\(id): could not forget the stored key: \(error)") }
+        alertEngine.prune(accountID: id)
+        snapshots[id] = nil
+        for key in samplesByKey.keys where key.hasPrefix(id + "|") && !key.dropFirst(id.count + 1).contains("|") {
+            samplesByKey[key] = nil
+        }
+        fetchState[id] = nil
+        if selectedAccountID == id { selectedAccountID = registry.accounts.first { !$0.hidden }?.id }
+        commitRegistry()
+        persistence.save("snapshots") { [unowned self] in snapshots }
+        persistence.save("samples") { [unowned self] in samplesByKey }
+        persistence.save("alerts") { [unowned self] in alertEngine }
+        Log.info("\(id): removed")
+        scheduleFetches()
     }
 
     // MARK: Adding accounts
@@ -513,7 +579,12 @@ final class UsageStore: ObservableObject {
         pruneSamples(now: snapshot.fetchedAt)
         let thresholds = UserDefaults.mate.array(forKey: PrefKey.alertThresholds.rawValue) as? [Int]
             ?? Preferences.defaults[PrefKey.alertThresholds.rawValue] as? [Int] ?? []
-        for event in alertEngine.evaluate(snapshot, thresholds: thresholds) { onAlert(event) }
+        let provider = registry.accounts.first { $0.id == snapshot.accountID }?.provider.rawValue
+        let muted = UserDefaults.mate.stringArray(forKey: PrefKey.alertsDisabledProviders.rawValue) ?? []
+        // The engine still sees every snapshot, so turning a provider's alerts back on does not replay old crossings.
+        for event in alertEngine.evaluate(snapshot, thresholds: thresholds) where !muted.contains(provider ?? "") {
+            onAlert(event)
+        }
         persistence.save("snapshots") { [unowned self] in snapshots }
         persistence.save("samples") { [unowned self] in samplesByKey }
         persistence.save("alerts") { [unowned self] in alertEngine }

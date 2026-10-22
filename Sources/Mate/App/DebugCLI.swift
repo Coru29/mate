@@ -4,7 +4,9 @@ import MateCore
 /// Command-line switches: `--fake` (scripted `FakeProvider`, in-memory vault, temp data dir unless `MATE_DATA_DIR`)
 /// and `--dump` (fetch once, print non-secret fields, exit). UI checks: `--open-panel` opens the panel after launch
 /// (and closes it 10 s later unless the mouse is over it),
-/// `--demo-alert` drops a sample alert.
+/// `--demo-alert` drops a sample alert, `--snapshot-settings <dir>` / `--snapshot-welcome <dir>` write a PNG of every
+/// settings page / welcome step (see `DebugCLI+Windows.swift`). `MATE_DEFAULTS_SUITE` keeps a test run's preferences
+/// apart from the real ones.
 /// Accounts (until Settings exists): `--add-account claude|codex` runs that provider's sign-in, stores the account,
 /// fetches it once, prints it and exits; `--add-config-dir claude|codex <path>` adds a config-dir source, prints the
 /// provider's accounts and exits; `--set-grok <teamId> [<budget>]` stores a Grok management key read from stdin.
@@ -140,16 +142,11 @@ enum DebugCLI {
             if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
                 let dir = args[i + 1]
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                    // The window's own pixels (SwiftUI text does not survive `cacheDisplay`).
-                    guard let number = UsageWindowController.shared.debugWindowNumber,
-                          let image = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(number),
-                                                              .boundsIgnoreFraming) else { return }
-                    try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
-                        .write(to: URL(fileURLWithPath: "\(dir)/usage.png"))
-                    Log.info("snapshot \(dir)/usage.png")
+                    captureWindow(UsageWindowController.shared.debugWindowNumber, to: "\(dir)/usage.png")
                 }
             }
         }
+        scheduleWindowSnapshots(notch: notch)
         // `--snapshot <dir>`: PNGs of the notch window at 1, 3, 11 and 16 s, rendered in-process (no screen recording).
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             let dir = args[i + 1]
@@ -162,7 +159,7 @@ enum DebugCLI {
     }
 
     /// Renders the view's layer tree over a mid-gray backdrop, so the black shape is visible.
-    private static func snapshot(_ view: NSView, to path: String) {
+    static func snapshot(_ view: NSView, to path: String) {
         guard let layer = view.layer else { return }
         let scale = view.window?.backingScaleFactor ?? 2
         let size = CGSize(width: view.bounds.width * scale, height: view.bounds.height * scale)

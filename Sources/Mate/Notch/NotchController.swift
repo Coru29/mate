@@ -78,6 +78,8 @@ final class NotchController {
     private var showAlways = NotchPrefs.showPillAlways
     private var screenChoice = NotchPrefs.screenChoice
     private var notifications = NotchPrefs.systemNotifications
+    /// The panel shows the welcome guide's hint until it closes.
+    private var showHint = false
 
     init(store: UsageStore) {
         self.store = store
@@ -120,9 +122,11 @@ final class NotchController {
         if mode == .closed && !closing { showNextAlert() }
     }
 
-    /// Opens the panel right away (hover after the delay, a click, an alert click, `--open-panel`).
-    func openPanel() {
+    /// Opens the panel right away (hover after the delay, a click, an alert click, `--open-panel`). `hint` adds the
+    /// "Mate vive acá" line, for the first opening after the welcome guide.
+    func openPanel(hint: Bool = false) {
         guard mode != .open, let info = screenInfo else { return }
+        showHint = hint
         cancel(&openTimer)
         cancel(&closeTimer)
         if mode == .alert { removeAlertView() }
@@ -157,6 +161,7 @@ final class NotchController {
         cancel(&closeTimer)
         removeMonitors()
         mode = .closed
+        showHint = false
         store.panelDidClose()
         Log.info("panel closed")
         hosting = nil
@@ -456,7 +461,7 @@ final class NotchController {
     }
 
     private func makePanel() -> PanelView {
-        PanelView(store: store, topInset: notch.height) { [weak self] in self?.onOpenUsage() }
+        PanelView(store: store, topInset: notch.height, hint: showHint) { [weak self] in self?.onOpenUsage() }
     }
 
     // MARK: Alerts
@@ -640,6 +645,8 @@ final class NotchController {
             showAlways = always
             refreshClosedShape()
         }
+        // Provider order or enabled providers may have changed: the pill and an open panel follow.
+        queueRefresh()
     }
 
     // MARK: Timers

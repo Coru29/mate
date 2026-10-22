@@ -98,8 +98,11 @@ final class Persistence {
 
 extension UserDefaults {
     /// The `io.github.coru29.Mate` suite. Inside the app bundle that is the app's own domain (`.standard`); a suite
-    /// named after the running bundle id is refused by Foundation.
-    static var mate: UserDefaults {
-        Bundle.main.bundleIdentifier == Preferences.suiteName ? .standard : UserDefaults(suiteName: Preferences.suiteName) ?? .standard
-    }
+    /// named after the running bundle id is refused by Foundation. `MATE_DEFAULTS_SUITE` points test runs at a
+    /// scratch suite, so they never read or write the user's real preferences.
+    static let mate: UserDefaults = {
+        let name = ProcessInfo.processInfo.environment["MATE_DEFAULTS_SUITE"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? Preferences.suiteName
+        return Bundle.main.bundleIdentifier == name ? .standard : UserDefaults(suiteName: name) ?? .standard
+    }()
 }

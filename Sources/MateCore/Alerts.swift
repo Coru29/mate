@@ -71,6 +71,16 @@ public struct AlertEngine: Codable, Sendable {
         return events
     }
 
+    /// Forgets every window of a deleted account, so the state does not outlive it. Keys are
+    /// "<account>|<window key>" and window keys hold no "|", so another account whose id merely starts with
+    /// `accountID` keeps its entries.
+    public mutating func prune(accountID: String) {
+        let prefix = accountID + "|"
+        entries = entries.filter { key, _ in
+            !(key.hasPrefix(prefix) && !key.dropFirst(prefix.count).contains("|"))
+        }
+    }
+
     private static func periodChanged(_ entry: Entry, _ window: LimitWindow) -> Bool {
         if let old = entry.resetsAt, let new = window.resetsAt {
             return new.timeIntervalSince(old) > periodShift

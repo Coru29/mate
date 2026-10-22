@@ -95,3 +95,20 @@ private func kinds(_ events: [AlertEvent]) -> [AlertEvent.Kind] { events.map(\.k
     #expect(WindowKind.weeklyModel("Opus").key == "weeklyModel:Opus")
     #expect(WindowKind.session.key == "session")
 }
+
+@Test func pruneForgetsOnlyThatAccount() {
+    var engine = AlertEngine()
+    _ = engine.evaluate(snap(80, account: "a"), thresholds: thresholds)
+    _ = engine.evaluate(snap(80, account: "b"), thresholds: thresholds)
+    engine.prune(accountID: "a")
+    // "a" starts over: the same crossing alerts again; "b" still remembers it fired.
+    #expect(kinds(engine.evaluate(snap(80, account: "a"), thresholds: thresholds)) == [.threshold(75)])
+    #expect(engine.evaluate(snap(80, account: "b"), thresholds: thresholds).isEmpty)
+}
+
+@Test func pruneDoesNotTouchAnAccountWhoseIdIsAPrefix() {
+    var engine = AlertEngine()
+    _ = engine.evaluate(snap(80, account: "claude:a|x"), thresholds: thresholds)
+    engine.prune(accountID: "claude:a")
+    #expect(engine.evaluate(snap(80, account: "claude:a|x"), thresholds: thresholds).isEmpty)
+}

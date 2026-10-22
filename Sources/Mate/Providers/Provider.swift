@@ -71,12 +71,16 @@ protocol Provider: AnyObject, Sendable {
     func configDir(forLogFile path: String) -> String?
     /// Reads at most one bounded chunk per file; `more` is true while some file has unread bytes left.
     func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool)
+    /// The user deleted `account` in Settings: forget anything of it the provider keeps in Mate's own store (Grok's
+    /// key). Never touches an agent's credentials.
+    func accountRemoved(_ account: Account) throws
 }
 
 extension Provider {
     func configDir(forLogFile path: String) -> String? { nil }
     var alwaysActive: Bool { false }
     var agentOnly: Bool { false }
+    func accountRemoved(_ account: Account) throws {}
 
     /// Refreshes only an account Mate owns; an agent-owned account throws `.refreshNotAllowed` before any request.
     func refresh(_ tokens: OAuthTokens, accountID: String, registry: AccountRegistry) async throws -> OAuthTokens {

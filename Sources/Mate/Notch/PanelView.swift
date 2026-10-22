@@ -7,12 +7,15 @@ struct PanelView: View {
     @ObservedObject var store: UsageStore
     /// Height of the notch strip at the top of the panel (content starts below it).
     let topInset: CGFloat
+    /// The welcome guide's "Mate vive acá" line, on the first opening only.
+    var hint = false
     let onHeader: () -> Void
 
     var body: some View {
         let now = Date()
         let accounts = store.notchAccounts
         VStack(alignment: .leading, spacing: 14) {
+            if hint { hintRow }
             if let account = store.panelAccount {
                 header(account)
                 status(account, now: now)
@@ -39,6 +42,18 @@ struct PanelView: View {
         .padding(.bottom, accounts.count > 1 ? 10 : 18)
         .frame(width: NotchController.panelWidth, alignment: .topLeading)
         .environment(\.colorScheme, .dark)
+    }
+
+    private var hintRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Tone.ok.color)
+            Text("Mate vive acá: pasá el mouse por el notch para ver tus límites.")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(NotchPalette.onNotch)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func header(_ account: Account) -> some View {
