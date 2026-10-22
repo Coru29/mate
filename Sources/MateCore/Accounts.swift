@@ -82,37 +82,52 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     public init(accounts: [Account] = []) { self.accounts = accounts }
 
     /// `observed` holds ALL sessions currently seen for `provider` across every
-    /// watched config dir. Only that provider's accounts are touched.
-    public mutating func reconcile(provider: ProviderID, observed: [ObservedSession]) -> [OwnershipAction] {
+    /// watched config dir. `scannedDirs` holds the config dirs that were read
+    /// successfully: callers pass only dirs whose read fully succeeded, because a
+    /// failed read must not look like a logout. An agent-owned account is demoted
+    /// to Mate only when its `agentConfigDir` is in `scannedDirs` and its identity
+    /// was not observed there. Only that provider's accounts are touched.
+    /// Emits one `storeShadow` per account, for the session in its `agentConfigDir`.
+    public mutating func reconcile(provider: ProviderID, observed: [ObservedSession],
+                                   scannedDirs: Set<String>) -> [OwnershipAction] {
         var actions: [OwnershipAction] = []
         let sessions = observed.filter { $0.provider == provider }
-        var seen = Set<String>()
+        var done = Set<String>()
 
         for s in sessions {
             let id = "\(provider.rawValue):\(s.identity)"
-            seen.insert(id)
+            guard done.insert(id).inserted else { continue }
             let dirs = sessions.filter { $0.identity == s.identity }.map(\.configDir)
-            if let i = accounts.firstIndex(where: { $0.id == id }) {
-                if let e = s.email { accounts[i].email = e; accounts[i].name = e }
+            let email = sessions.first { $0.identity == s.identity && $0.email != nil }?.email
+            let i: Int
+            if let found = accounts.firstIndex(where: { $0.id == id }) {
+                i = found
+                if let email { accounts[i].email = email }
                 accounts[i].owner = .agent
                 if accounts[i].agentConfigDir.map({ dirs.contains($0) }) != true {
                     accounts[i].agentConfigDir = dirs[0]
                 }
             } else {
-                let color = accounts.filter { $0.provider == provider }.count
-                accounts.append(Account(id: id, provider: provider, identity: s.identity, email: s.email,
-                                        name: s.email ?? s.identity, colorIndex: color,
+                accounts.append(Account(id: id, provider: provider, identity: s.identity, email: email,
+                                        name: email ?? s.identity, colorIndex: nextColor(provider),
                                         source: .detected, owner: .agent, agentConfigDir: dirs[0]))
+                i = accounts.count - 1
             }
-            actions.append(.storeShadow(accountID: id, configDir: s.configDir))
+            actions.append(.storeShadow(accountID: id, configDir: accounts[i].agentConfigDir ?? dirs[0]))
         }
 
         for i in accounts.indices where accounts[i].provider == provider
-            && accounts[i].owner == .agent && !seen.contains(accounts[i].id) {
-            accounts[i].owner = .mate
-            accounts[i].agentConfigDir = nil
+            && accounts[i].owner == .agent && !done.contains(accounts[i].id) {
+            if let dir = accounts[i].agentConfigDir, scannedDirs.contains(dir) {
+                accounts[i].owner = .mate
+                accounts[i].agentConfigDir = nil
+            }
         }
         return actions
+    }
+
+    private func nextColor(_ provider: ProviderID) -> Int {
+        (accounts.filter { $0.provider == provider }.map(\.colorIndex).max() ?? -1) + 1
     }
 
     /// An account added through Mate's own login: Mate owns its tokens.
@@ -120,12 +135,11 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     public mutating func addLogin(provider: ProviderID, identity: String, email: String?) -> Account {
         let id = "\(provider.rawValue):\(identity)"
         if let i = accounts.firstIndex(where: { $0.id == id }) {
-            if let e = email { accounts[i].email = e; accounts[i].name = e }
+            if let e = email { accounts[i].email = e }
             return accounts[i]
         }
-        let color = accounts.filter { $0.provider == provider }.count
         let a = Account(id: id, provider: provider, identity: identity, email: email,
-                        name: email ?? identity, colorIndex: color, source: .login,
+                        name: email ?? identity, colorIndex: nextColor(provider), source: .login,
                         owner: .mate, agentConfigDir: nil)
         accounts.append(a)
         return a
@@ -162,14 +176,23 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
         return SwitchPlan(incoming: id, outgoing: outgoing?.id, configDir: configDir)
     }
 
-    public mutating func apply(_ plan: SwitchPlan) {
-        if let o = plan.outgoing, let i = accounts.firstIndex(where: { $0.id == o }) {
-            accounts[i].owner = .mate
-            accounts[i].agentConfigDir = nil
+    /// Call only after the agent's credentials were written. Refuses (false, no
+    /// change) if the plan is stale: incoming is no longer Mate-owned, or the
+    /// agent-owned account in the dir is not the plan's outgoing one.
+    @discardableResult
+    public mutating func apply(_ plan: SwitchPlan) -> Bool {
+        guard let n = accounts.firstIndex(where: { $0.id == plan.incoming }),
+              accounts[n].owner == .mate else { return false }
+        let current = accounts.firstIndex {
+            $0.provider == accounts[n].provider && $0.owner == .agent && $0.agentConfigDir == plan.configDir
         }
-        if let i = accounts.firstIndex(where: { $0.id == plan.incoming }) {
-            accounts[i].owner = .agent
-            accounts[i].agentConfigDir = plan.configDir
+        guard current.map({ accounts[$0].id }) == plan.outgoing else { return false }
+        if let c = current {
+            accounts[c].owner = .mate
+            accounts[c].agentConfigDir = nil
         }
+        accounts[n].owner = .agent
+        accounts[n].agentConfigDir = plan.configDir
+        return true
     }
 }
