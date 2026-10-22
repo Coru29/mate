@@ -117,7 +117,7 @@ final class NotchShapeView: NSView {
         var maxDuration: Double
 
         static let open = Spring(response: 0.42, damping: 0.82, maxDuration: 0.7)
-        static let close = Spring(response: 0.28, damping: 1, maxDuration: 0.42)
+        static let close = Spring(response: 0.22, damping: 1, maxDuration: 0.26)
     }
 
     private func layers(_ part: Part) -> [CAShapeLayer] {

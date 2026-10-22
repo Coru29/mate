@@ -12,12 +12,14 @@ final class NotchController {
     private static let closedRadius: CGFloat = 10
     private static let openRadius: CGFloat = 18
     private static let openDelay: TimeInterval = 0.15
-    private static let closeDelay: TimeInterval = 0.4
+    private static let closeDelay: TimeInterval = 0.15
     private static let scrollThreshold: CGFloat = 24
     /// About when an opening spring reaches 60 % of its travel.
     private static let contentDelay: CFTimeInterval = 0.12
-    /// Closing: the content fades for this long before the shape starts retracting.
+    /// Closing: the content fades out this fast, while the shape is already retracting.
     private static let contentFadeOut: CFTimeInterval = 0.08
+    /// Closing: the pill fades back in from about 40 % of the retract.
+    private static let pillReturnDelay: CFTimeInterval = 0.09
 
     var onOpenUsage: () -> Void = {}
     var onOpenSettings: () -> Void = {}
@@ -61,6 +63,9 @@ final class NotchController {
     private var hosting: PanelHostingView?
     private var panelView: PanelContainerView?
     private var alertView: NSView?
+    /// Panel or alert views fading out while the shape closes; removed when the shape is at rest, so nothing is
+    /// re-laid out mid-animation.
+    private var retired: [NSView] = []
     private var openTimer: Timer?
     private var closeTimer: Timer?
     private var alertTimer: Timer?
@@ -157,9 +162,24 @@ final class NotchController {
         hosting = nil
         if let container = panelView {
             panelView = nil
-            NotchMotion.fadeOut(container) { container.removeFromSuperview() }
+            retire(container)
         }
-        slideClosed(after: Self.contentFadeOut)
+        slideClosed()
+    }
+
+    /// Fades a panel or alert view out (as a frozen bitmap) and keeps it until the shape is at rest.
+    private func retire(_ view: NSView) {
+        if let layer = view.layer {
+            layer.rasterizationScale = window.backingScaleFactor
+            layer.shouldRasterize = true
+        }
+        NotchMotion.fadeOut(view, duration: Self.contentFadeOut)
+        retired.append(view)
+    }
+
+    private func flushRetired() {
+        for view in retired { view.removeFromSuperview() }
+        retired.removeAll()
     }
 
     // MARK: Layout
@@ -203,6 +223,7 @@ final class NotchController {
         mode = .closed
         closing = false
         generation += 1
+        flushRetired()
         // A hide that was in flight must not leave the pill held invisible.
         NotchMotion.restore(pill)
     }
@@ -250,8 +271,10 @@ final class NotchController {
     /// Moves the window (never animated) and re-places everything in it, the shape at rest.
     /// `final` is false at the start of a transition: a pill that is going away stays until the shape is back.
     private func setWindowFrame(_ frame: CGRect, final: Bool = true) {
-        window.setFrame(frame.integral, display: false)
-        root.frame = CGRect(origin: .zero, size: window.frame.size)
+        if frame.integral != window.frame {
+            window.setFrame(frame.integral, display: false)
+            root.frame = CGRect(origin: .zero, size: window.frame.size)
+        }
         pill.frame = local(pillRect)
         if pillVisible || final { pill.isHidden = !pillVisible }
         panelView?.frame = local(panelRect)
@@ -284,11 +307,14 @@ final class NotchController {
         case .hide: newEar = nil
         }
 
+        // Room for an underdamped spring's overshoot; a critically damped one (closing) needs none. When the window
+        // already holds everything (closing from the panel) it is left alone: no resize at the start of the motion.
         let both = fromRect.union(toRect).union(shapeRect).union(target).union(stripRect)
             .union(oldEar ?? .null).union(newEar ?? .null)
-        let slack: CGFloat = 12
-        setWindowFrame(CGRect(x: both.minX - slack, y: both.minY - slack, width: both.width + 2 * slack,
-                              height: both.height + slack), final: false)
+        let slack: CGFloat = spring.damping < 1 ? 12 : 0
+        let needed = CGRect(x: both.minX - slack, y: both.minY - slack, width: both.width + 2 * slack,
+                            height: both.height + slack).integral
+        setWindowFrame(window.frame.contains(needed) ? window.frame : needed, final: false)
         shapeRect = target
         shapeRadius = radius
         earRect = newEar
@@ -304,6 +330,7 @@ final class NotchController {
 
         let finish = { [weak self] in
             guard let self, gen == self.generation else { return }
+            self.flushRetired()
             self.setWindowFrame(target.union(self.stripRect).union(self.earRect ?? .null))
             completion?()
         }
@@ -319,19 +346,26 @@ final class NotchController {
         }
         root.animate(.body, from: from, to: to, spring: spring, delay: delay, completion: partDone)
         if moveEar {
-            root.animate(.ear, from: earFrom, to: earTo, spring: newEar == nil ? .close : .open, delay: delay,
+            root.animate(.ear, from: earFrom, to: earTo, spring: newEar == nil ? .close : spring, delay: delay,
                          completion: partDone)
         }
     }
 
-    private func slideClosed(after delay: CFTimeInterval = 0) {
+    /// Closes in one motion: the body retracts straight into the closed shape while the content fades out, and the
+    /// pill's ear grows back with the pill fading in from about 40 % of the way.
+    private func slideClosed() {
         closing = true
         let wasKey = window.isKeyWindow
-        transition(to: closedRect, radius: Self.closedRadius, spring: .close, delay: delay) { [weak self] in
+        if pillShown { showPill(revealDelay: Self.pillReturnDelay) }
+        transition(to: closedRect, radius: Self.closedRadius, spring: .close,
+                   ear: pillShown ? .show : .hide) { [weak self] in
             guard let self else { return }
             self.closing = false
-            // Back in the notch: the pill slides out again (or the closed shape changed while sliding).
-            if self.pillShown || self.shapeRect != self.closedRect { self.transitionClosed() }
+            // The pill may have appeared or gone, or the menu bar changed, while closing.
+            if self.shapeRect != self.closedRect || (self.earRect != nil) != self.pillShown
+                || self.pillVisible != self.pillShown {
+                self.transitionClosed()
+            }
             // Hand the keyboard back to the app the user was in (the panel became key only through a click).
             if wasKey || self.window.isKeyWindow {
                 self.window.orderOut(nil)
@@ -350,10 +384,10 @@ final class NotchController {
     }
 
     /// Makes the pill visible, cancelling any held or in-flight fade-out; fades it in if it was not visible.
-    private func showPill() {
+    private func showPill(revealDelay: CFTimeInterval = 0.1) {
         pill.isHidden = false
         NotchMotion.restore(pill)
-        if !pillVisible { NotchMotion.reveal(pill, delay: 0.1, duration: 0.2) }
+        if !pillVisible { NotchMotion.reveal(pill, delay: revealDelay, duration: 0.14) }
         pillVisible = true
     }
 
@@ -450,10 +484,10 @@ final class NotchController {
         cancel(&alertTimer)
         if let view = alertView {
             alertView = nil
-            NotchMotion.fadeOut(view) { view.removeFromSuperview() }
+            retire(view)
         }
         mode = .closed
-        slideClosed(after: Self.contentFadeOut)
+        slideClosed()
     }
 
     private func removeAlertView() {
@@ -464,7 +498,12 @@ final class NotchController {
 
     // MARK: Mouse and keyboard
 
-    private func hoverChanged(_ inside: Bool) {
+    /// Where hovering counts. Closed, only the notch strip: while the shape retracts the window is still the panel's
+    /// size, and a cursor that just left the panel must not reopen it from the empty area.
+    private var hoverRect: CGRect { mode == .closed ? stripRect : window.frame }
+
+    private func hoverChanged(_ entered: Bool) {
+        let inside = entered && hoverRect.contains(NSEvent.mouseLocation)
         hovering = inside
         if inside {
             cancel(&closeTimer)
@@ -497,7 +536,7 @@ final class NotchController {
     }
 
     private func syncHover() {
-        let inside = window.frame.contains(NSEvent.mouseLocation)
+        let inside = window.frame.contains(NSEvent.mouseLocation) && hoverRect.contains(NSEvent.mouseLocation)
         if inside != hovering { hoverChanged(inside) }
     }
 
