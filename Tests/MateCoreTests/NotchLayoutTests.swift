@@ -48,6 +48,11 @@ import Testing
         #expect(NotchLayout.pillRect(notch: n) == CGRect(x: 850, y: 950, width: 56, height: 32))
     }
 
+    @Test func taggedPillIsWider() {
+        let n = NotchLayout.notchRect(on: macbook()).rect
+        #expect(NotchLayout.pillRect(notch: n, tagged: true) == CGRect(x: 850, y: 950, width: 80, height: 32))
+    }
+
     @Test func panelCenteredAndClampedToScreen() {
         let m = macbook()
         let n = NotchLayout.notchRect(on: m).rect

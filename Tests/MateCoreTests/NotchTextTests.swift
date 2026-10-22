@@ -32,6 +32,8 @@ private let now = Date(timeIntervalSince1970: 1_792_670_400)
     #expect(NotchText.tokens(950) == "950 tokens")
     #expect(NotchText.tokens(182_400) == "182 k tokens")
     #expect(NotchText.tokens(1_250_000).hasSuffix(" M tokens"))
+    // From 10 M the decimal is noise: "71 M tokens", not "71,1 M tokens".
+    #expect(NotchText.tokens(71_100_000) == "71 M tokens")
 }
 
 @Test func alertLineNamesAccountWindowAndRunOut() {

@@ -11,6 +11,7 @@
 "Salir de Mate" = "Salir de Mate";
 
 /* Notch: pill and meters */
+"sem" = "sem";
 "%lld %%" = "%lld %%";
 "Sesión" = "Sesión";
 "Semanal" = "Semanal";
@@ -40,6 +41,8 @@
 "hace %lld min" = "hace %lld min";
 "hace %lld h" = "hace %lld h";
 "%@ tokens" = "%@ tokens";
+"Sesión actual · %@" = "Sesión actual · %@";
+"Proyecto, tiempo y tokens de la sesión de %@ en curso (incluye caché)" = "Proyecto, tiempo y tokens de la sesión de %@ en curso (incluye caché)";
 "Todavía no hay datos de esta cuenta." = "Todavía no hay datos de esta cuenta.";
 "No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración." = "No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración.";
 

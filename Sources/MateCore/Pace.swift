@@ -53,3 +53,20 @@ public func tightestWindow(_ windows: [LimitWindow], now: Date) -> LimitWindow? 
     }
     return windows.max { score($0) < score($1) }
 }
+
+/// The window the pill shows. Nobody watches the week until it is running out, so the session is the default.
+/// 1. Any window at 100 % or more (earliest reset).
+/// 2. Else the highest weekly window (all models or one model) at 80 % or more.
+/// 3. Else the session.
+/// 4. Else (providers without a session) the tightest window.
+public func pillWindow(_ windows: [LimitWindow], now: Date) -> LimitWindow? {
+    if windows.contains(where: { $0.usedPercent >= 100 }) { return tightestWindow(windows, now: now) }
+    let weekly = windows.filter {
+        switch $0.kind {
+        case .weekly, .weeklyModel: $0.usedPercent >= 80
+        default: false
+        }
+    }
+    if let high = weekly.max(by: { $0.usedPercent < $1.usedPercent }) { return high }
+    return windows.first { $0.kind == .session } ?? tightestWindow(windows, now: now)
+}

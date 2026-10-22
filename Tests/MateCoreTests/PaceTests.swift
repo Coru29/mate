@@ -89,3 +89,38 @@ private func session(used: Double, resetsIn: TimeInterval = 3 * hour) -> LimitWi
                            duration: 7 * 24 * hour, detail: nil)
     #expect(tightestWindow([week, sess], now: now)?.kind == .session)
 }
+
+private func week(used: Double, kind: WindowKind = .weekly) -> LimitWindow {
+    LimitWindow(kind: kind, usedPercent: used, resetsAt: now.addingTimeInterval(3 * 24 * hour),
+                duration: 7 * 24 * hour, detail: nil)
+}
+
+@Test func pillDefaultsToSession() {
+    #expect(pillWindow([week(used: 40), session(used: 18)], now: now)?.kind == .session)
+}
+
+@Test func pillShowsWeeklyFromEighty() {
+    #expect(pillWindow([session(used: 30), week(used: 85)], now: now)?.kind == .weekly)
+    // The highest weekly window wins.
+    let opus = week(used: 92, kind: .weeklyModel("opus"))
+    #expect(pillWindow([session(used: 30), week(used: 85), opus], now: now)?.kind == .weeklyModel("opus"))
+    #expect(pillWindow([session(used: 30), week(used: 79.9)], now: now)?.kind == .session)
+}
+
+@Test func pillLimitReachedWins() {
+    let early = session(used: 100, resetsIn: hour)
+    let later = LimitWindow(kind: .weekly, usedPercent: 100, resetsAt: now.addingTimeInterval(2 * hour),
+                            duration: 7 * 24 * hour, detail: nil)
+    #expect(pillWindow([later, early], now: now)?.kind == .session)
+    // A full session beats a weekly window at 95 %.
+    #expect(pillWindow([week(used: 95), early], now: now)?.kind == .session)
+    // A full weekly window beats the session.
+    #expect(pillWindow([session(used: 20), later], now: now)?.kind == .weekly)
+}
+
+@Test func pillFallsBackWithoutSession() {
+    let budget = LimitWindow(kind: .monthlyBudget, usedPercent: 40, resetsAt: nil, duration: nil, detail: nil)
+    let premium = LimitWindow(kind: .premiumRequests, usedPercent: 20, resetsAt: nil, duration: nil, detail: nil)
+    #expect(pillWindow([premium, budget], now: now)?.kind == .monthlyBudget)
+    #expect(pillWindow([], now: now) == nil)
+}

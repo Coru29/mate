@@ -35,6 +35,8 @@ final class NotchController {
     private var fakeNotch = false
     private var menuBarVisible = true
     private var pillShown = false
+    /// The pill shows a weekly window instead of the session, with a tag (and a wider shape).
+    private var pillTagged = false
 
     private var mode = Mode.closed
     /// The shape is sliding back to its closed size; alerts wait for it.
@@ -193,7 +195,7 @@ final class NotchController {
         generation += 1
     }
 
-    private var pillRect: CGRect { NotchLayout.pillRect(notch: notch) }
+    private var pillRect: CGRect { NotchLayout.pillRect(notch: notch, tagged: pillTagged) }
 
     /// What the window covers when closed: the notch (hover opens the panel even with the pill hidden) and the pill.
     /// A fake notch with the menu bar hidden (another app in full screen) keeps only a 2 pt edge at the very top,
@@ -311,8 +313,15 @@ final class NotchController {
         let wanted = account != nil && menuBarVisible && (store.activeProvider != nil || showAlways)
         let now = Date()
         if let account {
-            let w = tightestWindow(store.snapshots[account.id]?.windows ?? [], now: now)
-            pill.update(percent: w?.usedPercent, tone: Tone(w.flatMap { store.pace(account.id, $0, now: now) }))
+            let w = pillWindow(store.snapshots[account.id]?.windows ?? [], now: now)
+            let tagged: Bool
+            switch w?.kind {
+            case .weekly, .weeklyModel: tagged = true
+            default: tagged = false
+            }
+            pill.update(percent: w?.usedPercent, tone: Tone(w.flatMap { store.pace(account.id, $0, now: now) }),
+                        tag: tagged ? NotchText.weekTag : nil)
+            pillTagged = tagged
         }
         pillShown = wanted
     }
@@ -331,15 +340,16 @@ final class NotchController {
 
     private func refresh() {
         guard screenInfo != nil else { return }
-        let wasShown = pillShown
+        let wasShown = pillShown, wasTagged = pillTagged
         updatePill()
         switch mode {
         case .closed:
-            if wasShown != pillShown && !closing { transitionClosed() }
+            if (wasShown != pillShown || (pillShown && wasTagged != pillTagged)) && !closing { transitionClosed() }
         case .open:
+            pill.frame = local(pillRect)
             resizePanel()
         case .alert:
-            break
+            pill.frame = local(pillRect)
         }
     }
 

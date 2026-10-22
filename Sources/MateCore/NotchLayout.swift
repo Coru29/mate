@@ -31,6 +31,8 @@ public enum ScreenChoice: String, Sendable {
 public enum NotchLayout {
     static let fakeNotchSize = CGSize(width: 200, height: 32)
     static let pillWidth: CGFloat = 56
+    /// Extra room for the "sem" tag when the pill shows a window other than the session.
+    static let pillTagWidth: CGFloat = 24
     static let panelWidth: CGFloat = 380
 
     public static func pickScreen(_ screens: [ScreenInfo], choice: ScreenChoice, mouseScreen: UInt32?) -> ScreenInfo? {
@@ -52,8 +54,8 @@ public enum NotchLayout {
                        width: size.width, height: size.height), true)
     }
 
-    public static func pillRect(notch: CGRect) -> CGRect {
-        CGRect(x: notch.maxX, y: notch.minY, width: pillWidth, height: notch.height)
+    public static func pillRect(notch: CGRect, tagged: Bool = false) -> CGRect {
+        CGRect(x: notch.maxX, y: notch.minY, width: pillWidth + (tagged ? pillTagWidth : 0), height: notch.height)
     }
 
     public static func panelRect(notch: CGRect, contentHeight: CGFloat, screen: ScreenInfo) -> CGRect {

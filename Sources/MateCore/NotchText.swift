@@ -59,11 +59,15 @@ public enum NotchText {
         return String(localized: "hace \(minutes / 60) h")
     }
 
-    /// "182 k tokens", "1,2 M tokens".
+    /// Week tag next to the pill's percent when it shows a weekly window instead of the session.
+    public static var weekTag: String { String(localized: "sem") }
+
+    /// "182 k tokens", "1,2 M tokens", "71 M tokens".
     public static func tokens(_ n: Int) -> String {
         let amount: String
         if n >= 1_000_000 {
-            amount = (Double(n) / 1_000_000).formatted(.number.precision(.fractionLength(1))) + " M"
+            let m = Double(n) / 1_000_000
+            amount = m.formatted(.number.precision(.fractionLength(m >= 10 ? 0 : 1))) + " M"
         } else if n >= 1000 {
             amount = "\(n / 1000) k"
         } else {

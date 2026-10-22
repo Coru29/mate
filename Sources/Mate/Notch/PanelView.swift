@@ -106,7 +106,8 @@ struct PanelView: View {
             .foregroundStyle(NotchPalette.muted)
     }
 
-    /// Project and live session: "rambla · 34 min · 182 k tokens"; only the project when nothing is live.
+    /// Live Claude Code session: "Sesión actual · rambla" left, "34 min · 182 k tokens" right; only the project
+    /// (gray dot) when nothing is live.
     @ViewBuilder
     private func live(_ provider: ProviderID, now: Date) -> some View {
         let session = store.aggregates.liveSession(provider: provider, now: now)
@@ -117,11 +118,17 @@ struct PanelView: View {
                     Circle()
                         .fill(session == nil ? Color.white.opacity(0.28) : Tone.ok.color)
                         .frame(width: 7, height: 7)
-                    Text(verbatim: project)
-                        .fontWeight(.medium)
-                        .foregroundStyle(NotchPalette.onNotch)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Group {
+                        if session != nil {
+                            Text("Sesión actual · \(project)")
+                        } else {
+                            Text(verbatim: project)
+                        }
+                    }
+                    .fontWeight(.medium)
+                    .foregroundStyle(NotchPalette.onNotch)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     Spacer(minLength: 8)
                     if let session {
                         Text(verbatim: NotchText.duration(now.timeIntervalSince(session.startedAt))
@@ -131,8 +138,14 @@ struct PanelView: View {
                     }
                 }
                 .font(.system(size: 12))
+                .help(session == nil ? Text(verbatim: "") : liveHelp(provider))
             }
         }
+    }
+
+    private func liveHelp(_ provider: ProviderID) -> Text {
+        let tool = provider == .claude ? "Claude Code" : provider.displayName
+        return Text("Proyecto, tiempo y tokens de la sesión de \(tool) en curso (incluye caché)")
     }
 
     private func dots(_ accounts: [Account]) -> some View {
