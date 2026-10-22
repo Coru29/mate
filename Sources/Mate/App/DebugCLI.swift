@@ -64,10 +64,15 @@ enum DebugCLI {
     static func addConfigDir(_ provider: ProviderID, path: String) async -> Never {
         let store = makeStore()
         do {
-            try await store.addConfigDir(provider: provider, path: path)
+            let result = try await store.addConfigDir(provider: provider, path: path)
             store.flush()
             let accounts = store.accounts.filter { $0.provider == provider }
-            print("watching \(UsageStore.canonicalDir(path)) for \(provider.rawValue)")
+            let dir = UsageStore.canonicalDir(path)
+            switch result {
+            case .added: print("watching \(dir) for \(provider.rawValue)")
+            case .alreadyWatched: print("\(dir) was already watched for \(provider.rawValue); nothing changed")
+            case .isDefaultDir: print("\(dir) is \(provider.rawValue)'s default folder, always watched; nothing changed")
+            }
             print(render(accounts: accounts, snapshots: store.snapshots))
             exit(0)
         } catch {

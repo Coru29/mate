@@ -74,4 +74,20 @@ public enum CodexLogTail {
         }
         return nil
     }
+
+    /// The log's windows as they stand `now`, for the usage endpoint's fallback: a window whose reset time passed is
+    /// back at 0 % (with no reset time), and a log last written longer ago than its longest window (7 days when no
+    /// window says) describes nothing current, so there is no fallback (nil).
+    public static func fallback(_ windows: [LimitWindow], fileModified: Date, now: Date) -> [LimitWindow]? {
+        guard !windows.isEmpty else { return nil }
+        let longest = windows.compactMap(\.duration).max() ?? 604_800
+        guard now.timeIntervalSince(fileModified) <= longest else { return nil }
+        return windows.map { w in
+            guard let r = w.resetsAt, r <= now else { return w }
+            var reset = w
+            reset.usedPercent = 0
+            reset.resetsAt = nil
+            return reset
+        }
+    }
 }

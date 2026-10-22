@@ -159,3 +159,17 @@ private func query(_ url: URL) -> [String: String] {
     #expect(c("rel/dir") == "/work/rel/dir")
     #expect(c("/") == "/")
 }
+
+@Test func logFallbackClampsResetWindows() {
+    let now = Date(timeIntervalSince1970: 1_000_000)
+    let session = LimitWindow(kind: .session, usedPercent: 80, resetsAt: now.addingTimeInterval(-60), duration: 18_000)
+    let weekly = LimitWindow(kind: .weekly, usedPercent: 40, resetsAt: now.addingTimeInterval(86_400), duration: 604_800)
+    // The session window already reset: 0 % and no reset time; the weekly one is still current.
+    let w = CodexLogTail.fallback([session, weekly], fileModified: now.addingTimeInterval(-3600), now: now)
+    #expect(w?.count == 2)
+    #expect(w?[0].usedPercent == 0 && w?[0].resetsAt == nil)
+    #expect(w?[1].usedPercent == 40 && w?[1].resetsAt == weekly.resetsAt)
+    // A log older than the longest window says nothing about now.
+    #expect(CodexLogTail.fallback([session, weekly], fileModified: now.addingTimeInterval(-604_801), now: now) == nil)
+    #expect(CodexLogTail.fallback([], fileModified: now, now: now) == nil)
+}

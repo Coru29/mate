@@ -8,8 +8,8 @@ final class CodexProvider: Provider, @unchecked Sendable {
     static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     /// The default config dir: `$CODEX_HOME` when Mate itself was started with it, else `~/.codex`.
     static let defaultDir: String = {
-        if let home = ProcessInfo.processInfo.environment["CODEX_HOME"], !home.isEmpty { return home }
-        return "~/.codex"
+        guard let home = ProcessInfo.processInfo.environment["CODEX_HOME"], !home.isEmpty else { return "~/.codex" }
+        return LogDirs.canonicalConfigDir(home, home: NSHomeDirectory(), cwd: FileManager.default.currentDirectoryPath)
     }()
     /// Bytes read from the end of the newest rollout file for the log fallback.
     private static let tailBytes = 256 * 1024
@@ -107,7 +107,8 @@ final class CodexProvider: Provider, @unchecked Sendable {
         return try CodexTokenResponse.tokens(from: data, previous: tokens)
     }
 
-    /// The rate limits of the last `token_count` event of the newest rollout file under `configDir`.
+    /// The rate limits of the last `token_count` event of the newest rollout file under `configDir`, as they stand
+    /// now (reset windows at 0 %; nil when the log is too old to say anything).
     private func latestLogRateLimits(configDir: String) -> [LimitWindow]? {
         let files = logFiles(in: [sessionsDir(configDir)])
         let newest = files.max { modified($0) < modified($1) }
@@ -115,8 +116,8 @@ final class CodexProvider: Provider, @unchecked Sendable {
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
         try? handle.seek(toOffset: size > UInt64(Self.tailBytes) ? size - UInt64(Self.tailBytes) : 0)
-        guard let tail = try? handle.readToEnd() else { return nil }
-        return CodexLogTail.latestRateLimits(in: tail)
+        guard let tail = try? handle.readToEnd(), let windows = CodexLogTail.latestRateLimits(in: tail) else { return nil }
+        return CodexLogTail.fallback(windows, fileModified: modified(path), now: Date())
     }
 
     private func modified(_ path: String) -> Date {

@@ -20,19 +20,25 @@ enum OAuthLogin {
             url: url, asksForCode: true)
         defer { prompt.close() }
         NSWorkspace.shared.open(url)
-        return try await withTimeout(onCancel: { prompt.cancel() }) {
-            let code = try await prompt.code { try ClaudeLogin.code(fromPasted: $0, expectedState: state) }
-            var req = URLRequest(url: ClaudeProvider.tokenURL)
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.httpBody = try ClaudeLogin.exchangeBody(code: code, state: state, verifier: pkce.verifier,
-                                                        clientID: ClaudeProvider.clientID)
-            let (data, status) = try await HTTP.json(req)
-            if status == 400 || status == 401 { throw LoginError.denied("invalid_code") }
-            try ProviderError.check(status: status)
-            let tokens = try ClaudeTokenResponse.tokens(from: data, previous: OAuthTokens(accessToken: ""), now: Date())
-            let identity = try await ClaudeProvider.profile(accessToken: tokens.accessToken)
-            return (tokens, identity.uuid, identity.email)
+        return try await run(prompt) {
+            while true {
+                let code = try await prompt.code { try ClaudeLogin.code(fromPasted: $0, expectedState: state) }
+                var req = URLRequest(url: ClaudeProvider.tokenURL)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try ClaudeLogin.exchangeBody(code: code, state: state, verifier: pkce.verifier,
+                                                            clientID: ClaudeProvider.clientID)
+                let (data, status) = try await HTTP.json(req)
+                if status == 400 || status == 401 {
+                    // A used or mistyped code: the same sign-in can go on with a new one.
+                    prompt.reject(String(localized: "Anthropic no aceptó ese código. Abrí el navegador de nuevo y pegá el código nuevo."))
+                    continue
+                }
+                try ProviderError.check(status: status)
+                let tokens = try ClaudeTokenResponse.tokens(from: data, previous: OAuthTokens(accessToken: ""), now: Date())
+                let identity = try await ClaudeProvider.profile(accessToken: tokens.accessToken)
+                return (tokens, identity.uuid, identity.email)
+            }
         }
     }
 
@@ -50,12 +56,10 @@ enum OAuthLogin {
             server.stop()
             prompt.close()
         }
-        try await server.start()
-        NSWorkspace.shared.open(url)
-        return try await withTimeout(onCancel: { prompt.cancel(); server.stop() }) {
-            let callback = try await firstOf({ try await server.code() }, { () async throws -> LoopbackServer.Callback in
-                try await prompt.waitForCancel()
-            })
+        return try await run(prompt, onCancel: { server.stop() }) {
+            try await server.start()
+            NSWorkspace.shared.open(url)
+            let callback = try await server.code()
             do {
                 var req = URLRequest(url: CodexLogin.tokenURL)
                 req.httpMethod = "POST"
@@ -77,30 +81,25 @@ enum OAuthLogin {
         }
     }
 
-    /// Runs `body`, failing with `.timedOut` after `timeout`. `onCancel` unblocks the body's waits.
-    private static func withTimeout<T: Sendable>(onCancel: @escaping @MainActor () -> Void,
-                                                 _ body: @escaping @MainActor () async throws -> T) async throws -> T {
+    /// Runs the whole sign-in `body` (port binding, waits and network included) raced against the prompt's
+    /// "Cancelar" and the 5-minute timeout. Whichever ends first wins and the others are cancelled, so a cancelled
+    /// or timed-out sign-in never returns tokens. `onCancel` unblocks waits that do not follow task cancellation.
+    private static func run<T: Sendable>(_ prompt: LoginPrompt, onCancel: @escaping @MainActor () -> Void = {},
+                                         _ body: @escaping @MainActor () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { @MainActor in
                 try await withTaskCancellationHandler { try await body() } onCancel: {
-                    Task { @MainActor in onCancel() }
+                    Task { @MainActor in
+                        prompt.cancel()
+                        onCancel()
+                    }
                 }
             }
+            group.addTask { @MainActor () async throws -> T in try await prompt.waitForCancel() }
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw LoginError.timedOut
             }
-            defer { group.cancelAll() }
-            return try await group.next()!
-        }
-    }
-
-    /// The first of two waits to finish; the other is cancelled.
-    private static func firstOf<T: Sendable>(_ a: @escaping @MainActor () async throws -> T,
-                                             _ b: @escaping @MainActor () async throws -> T) async throws -> T {
-        try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { @MainActor in try await a() }
-            group.addTask { @MainActor in try await b() }
             defer { group.cancelAll() }
             return try await group.next()!
         }
@@ -158,10 +157,13 @@ final class LoopbackServer: @unchecked Sendable {
 
     private func bind() async throws {
         let params = NWParameters.tcp
-        params.allowLocalEndpointReuse = true
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         let listener = try NWListener(using: params)
-        self.listener = listener
+        let alreadyStopped = queue.sync {
+            if !stopped { self.listener = listener }
+            return stopped
+        }
+        if alreadyStopped { throw LoginError.cancelled }
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             let started = Answered()
             listener.stateUpdateHandler = { [weak self] state in
@@ -363,6 +365,13 @@ final class LoginPrompt: NSObject, NSWindowDelegate {
         } catch {
             model.error = error.localizedDescription
         }
+    }
+
+    /// The provider refused the accepted code: show `message` and wait for another one.
+    func reject(_ message: String) {
+        model.busy = false
+        model.code = ""
+        model.error = message
     }
 
     func cancel() {

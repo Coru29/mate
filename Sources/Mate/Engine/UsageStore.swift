@@ -43,6 +43,7 @@ final class UsageStore: ObservableObject {
     private var indexStarted: Set<ProviderID> = []
     private var firstRun = false
     private var reconcileAgain: Set<ProviderID> = []
+    private var reconcileWaiters: [ProviderID: [CheckedContinuation<Void, Never>]] = [:]
     /// "provider|configDir" whose keychain prompt the user denied: no automatic credential read until `refreshNow()`.
     private var deniedDirs: Set<String> = []
     /// In-flight agent-credential reads per "provider|configDir", shared so at most one keychain prompt is pending.
@@ -206,9 +207,12 @@ final class UsageStore: ObservableObject {
         return registry.accounts.first { $0.id == account.id } ?? account
     }
 
+    enum AddConfigDirResult: Equatable { case added, alreadyWatched, isDefaultDir }
+
     /// Adds a `CLAUDE_CONFIG_DIR` / `CODEX_HOME` folder as a source: watched like the default one from now on,
     /// and accounts first seen in it get `.configDir(path)` as their source. An empty folder simply has no accounts.
-    func addConfigDir(provider id: ProviderID, path: String) async throws {
+    @discardableResult
+    func addConfigDir(provider id: ProviderID, path: String) async throws -> AddConfigDirResult {
         guard let p = provider(id), id == .claude || id == .codex else { throw AddError.unsupported(id) }
         let dir = Self.canonicalDir(path)
         var isDir: ObjCBool = false
@@ -217,7 +221,8 @@ final class UsageStore: ObservableObject {
         }
         let defaultDir = Self.canonicalDir(id == .claude ? ClaudeProvider.defaultDir : CodexProvider.defaultDir)
         var dirs = configDirs[id.rawValue] ?? []
-        guard dir != defaultDir, !dirs.contains(dir), !p.extraConfigDirs.contains(dir) else { return }
+        if dir == defaultDir { return .isDefaultDir }
+        if dirs.contains(dir) || p.extraConfigDirs.contains(dir) { return .alreadyWatched }
         dirs.append(dir)
         configDirs[id.rawValue] = dirs
         persistence.save("configDirs") { [unowned self] in configDirs }
@@ -230,6 +235,7 @@ final class UsageStore: ObservableObject {
         indexer.index(p, paths: newLogs, fullScan: false, qos: .utility) { [weak self] events, cursors in
             self?.ingest(events, cursors: cursors)
         }
+        return .added
     }
 
     static func canonicalDir(_ path: String) -> String {
@@ -247,9 +253,15 @@ final class UsageStore: ObservableObject {
 
     private func provider(_ id: ProviderID) -> (any Provider)? { providers.first { $0.id == id } }
 
-    /// Re-reads the provider's sessions and applies the single-owner rules. Coalesces overlapping calls.
+    /// Re-reads the provider's sessions and applies the single-owner rules. Coalesces overlapping calls: a call
+    /// made while one runs asks it for another pass and returns when that pass is done, so on return the registry
+    /// reflects the sessions as they were at the time of the call.
     private func reconcile(_ p: any Provider) async {
-        guard reconciling.insert(p.id).inserted else { reconcileAgain.insert(p.id); return }
+        guard reconciling.insert(p.id).inserted else {
+            reconcileAgain.insert(p.id)
+            await withCheckedContinuation { reconcileWaiters[p.id, default: []].append($0) }
+            return
+        }
         defer { reconciling.remove(p.id) }
         repeat {
             reconcileAgain.remove(p.id)
@@ -279,6 +291,7 @@ final class UsageStore: ObservableObject {
                 selectedAccountID = registry.accounts.first { !$0.hidden }?.id
             }
         } while reconcileAgain.contains(p.id)
+        for waiter in reconcileWaiters.removeValue(forKey: p.id) ?? [] { waiter.resume() }
         scheduleFetches()
     }
 
