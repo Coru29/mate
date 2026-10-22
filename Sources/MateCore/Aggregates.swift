@@ -58,8 +58,8 @@ public struct UsageAggregates: Codable, Sendable {
         buckets[i].models[e.model, default: ModelTotals()].cost += Pricing.cost(
             model: e.model, input: e.input, output: e.output, cacheRead: e.cacheRead, cacheWrite: e.cacheWrite)
 
-        raw.append(e)
         newest = max(newest ?? e.at, e.at)
+        if let newest, e.at >= newest.addingTimeInterval(-Self.rawRetention) { raw.append(e) }
         if let newest, compactedDay != calendar.startOfDay(for: newest) {
             compactedDay = calendar.startOfDay(for: newest)
             compact(calendar: calendar)

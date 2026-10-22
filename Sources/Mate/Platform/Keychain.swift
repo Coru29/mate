@@ -5,6 +5,13 @@ import MateCore
 enum KeychainError: Error, CustomStringConvertible {
     case status(OSStatus)
 
+    /// The user denied (or could not be asked through) the access prompt.
+    var isDenied: Bool {
+        switch self {
+        case .status(let s): s == errSecUserCanceled || s == errSecAuthFailed || s == errSecInteractionNotAllowed
+        }
+    }
+
     var description: String {
         switch self {
         case .status(let s):

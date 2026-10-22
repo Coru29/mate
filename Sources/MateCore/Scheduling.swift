@@ -55,11 +55,14 @@ public struct FetchSchedule: Sendable {
 
     public init() {}
 
-    public func nextFetch(lastSuccess: Date?, failures: Int, active: Bool, panelOpen: Bool, now: Date) -> Date {
+    /// After failures the retry is `lastFailure + backoff` (from `now` when `lastFailure` is nil), so recomputing
+    /// the schedule later never pushes a pending retry further out.
+    public func nextFetch(lastSuccess: Date?, failures: Int, active: Bool, panelOpen: Bool, now: Date,
+                          lastFailure: Date? = nil) -> Date {
         if failures >= 1 {
             let exponent = min(failures - 1, 20)
             let delay = min(Self.activeInterval * pow(2, Double(exponent)), Self.maxBackoff)
-            return now.addingTimeInterval(delay)
+            return max((lastFailure ?? now).addingTimeInterval(delay), now)
         }
         let interval = active || panelOpen ? Self.activeInterval : Self.idleInterval
         return max((lastSuccess ?? now).addingTimeInterval(interval), now)

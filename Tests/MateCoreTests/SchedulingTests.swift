@@ -63,6 +63,19 @@ import Testing
         }
     }
 
+    /// Rescheduling for an unrelated reason (another account, activity) must not push a pending retry later.
+    @Test func retryNotPushedByReschedule() {
+        let failedAt = t0
+        let later = t0.addingTimeInterval(200)
+        #expect(s.nextFetch(lastSuccess: nil, failures: 1, active: true, panelOpen: false, now: later, lastFailure: failedAt)
+                == t0.addingTimeInterval(300))
+        #expect(s.nextFetch(lastSuccess: nil, failures: 2, active: true, panelOpen: false, now: later, lastFailure: failedAt)
+                == t0.addingTimeInterval(600))
+        // An overdue retry is due now, never in the past.
+        let overdue = t0.addingTimeInterval(400)
+        #expect(s.nextFetch(lastSuccess: nil, failures: 1, active: true, panelOpen: false, now: overdue, lastFailure: failedAt) == overdue)
+    }
+
     @Test func panelOpenFetchesWhenOlderThanOneMinute() {
         #expect(s.shouldFetchOnPanelOpen(lastSuccess: nil, now: t0))
         #expect(!s.shouldFetchOnPanelOpen(lastSuccess: t0, now: t0.addingTimeInterval(60)))

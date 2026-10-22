@@ -131,3 +131,22 @@ private let codexLines = [
 @Test func geminiStubReturnsNothing() {
     #expect(GeminiLog.events(from: Data("{}".utf8), sessionID: "s").isEmpty)
 }
+
+@Test func readsLargeFileInChunks() throws {
+    let expected = (0..<40).map { "line-\($0)-" + String(repeating: "y", count: $0 % 7) }
+    let url = try tempFile(expected.joined(separator: "\n") + "\n")
+    var cursor: FileCursor?
+    var lines: [String] = []
+    var reads = 0
+    while true {
+        let r = try IncrementalReader.read(url: url, cursor: cursor, maxChunk: 16)
+        #expect(r.cursor.offset - (cursor?.offset ?? 0) <= 16)
+        lines += strings(r.lines)
+        cursor = r.cursor
+        reads += 1
+        if r.atEnd { break }
+    }
+    #expect(lines == expected)
+    #expect(reads > 10)
+    #expect(cursor?.pending.isEmpty == true)
+}

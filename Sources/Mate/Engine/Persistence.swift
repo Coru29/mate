@@ -69,7 +69,9 @@ final class Persistence {
         timer?.invalidate()
         timer = nil
         firstPending = nil
-        let files = pending.map { (dir.appendingPathComponent($0.key + ".json"), $0.value()) }
+        // Cursors last: a crash between writes must never leave cursors ahead of the aggregates they produced.
+        let names = pending.keys.sorted { ($0 == "cursors" ? 1 : 0, $0) < ($1 == "cursors" ? 1 : 0, $1) }
+        let files = names.map { (dir.appendingPathComponent($0 + ".json"), pending[$0]!()) }
         pending.removeAll()
         let work: @Sendable () -> Void = {
             for (url, encode) in files {

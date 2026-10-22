@@ -115,3 +115,14 @@ private func days(_ n: Int) -> TimeInterval { TimeInterval(n) * 86_400 }
     #expect(!again)
     #expect(back.byModel(last: 30, now: now, calendar: cal).first?.tokens == 100)
 }
+
+/// The first-launch scan adds events in file order, not time order: old events arriving after newer ones must not
+/// be kept as raw events (they would bloat memory and aggregates.json), though they still count in their day.
+@Test func oldEventsAddedAfterNewerAreNotKeptRaw() {
+    var agg = UsageAggregates()
+    agg.add(event(at: now, key: "new"), calendar: cal)
+    for i in 0..<50 { agg.add(event(at: now.addingTimeInterval(-days(10) - TimeInterval(i)), key: "old\(i)"), calendar: cal) }
+    #expect(agg.rawEventCount == 1)
+    let tenDaysAgo = agg.daily(last: 11, now: now, calendar: cal).first!
+    #expect(tenDaysAgo.perProvider[.claude] == 5000)
+}

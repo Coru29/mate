@@ -17,8 +17,13 @@ public struct FileCursor: Codable, Sendable {
 public enum IncrementalReader {
     /// An unfinished line longer than this is dropped; the garbage tail that follows fails JSON parsing and is ignored.
     static let maxPending = 1_048_576
+    /// Default upper bound of bytes read per call, so memory stays bounded on huge logs.
+    public static let defaultChunk = 8 * 1_048_576
 
-    public static func read(url: URL, cursor: FileCursor?) throws -> (lines: [Data], cursor: FileCursor) {
+    /// Reads at most `maxChunk` new bytes. `atEnd` is false while more bytes remain: call again with the returned
+    /// cursor.
+    public static func read(url: URL, cursor: FileCursor?, maxChunk: Int = defaultChunk)
+        throws -> (lines: [Data], cursor: FileCursor, atEnd: Bool) {
         let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
         let inode = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
         let size = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
@@ -35,21 +40,28 @@ public enum IncrementalReader {
             let handle = try FileHandle(forReadingFrom: url)
             defer { try? handle.close() }
             try handle.seek(toOffset: start)
-            chunk = try handle.readToEnd() ?? Data()
+            chunk = try handle.read(upToCount: Int(min(UInt64(max(1, maxChunk)), size - start))) ?? Data()
         }
         let newOffset = start + UInt64(chunk.count)
 
-        var buffer = pending
-        buffer.append(chunk)
+        // Only the unfinished line from the last read is joined with the chunk: split the chunk at its first newline.
         var lines: [Data] = []
-        var lineStart = buffer.startIndex
-        while let nl = buffer[lineStart...].firstIndex(of: 0x0A) {
-            let line = buffer[lineStart..<nl]
-            if !line.isEmpty { lines.append(Data(line)) }
-            lineStart = buffer.index(after: nl)
+        var tailStart = chunk.startIndex
+        if let firstNL = chunk.firstIndex(of: 0x0A) {
+            var first = pending
+            first.append(chunk[chunk.startIndex..<firstNL])
+            if !first.isEmpty { lines.append(first) }
+            var lineStart = chunk.index(after: firstNL)
+            while let nl = chunk[lineStart...].firstIndex(of: 0x0A) {
+                if nl > lineStart { lines.append(chunk.subdata(in: lineStart..<nl)) }
+                lineStart = chunk.index(after: nl)
+            }
+            tailStart = lineStart
+            pending = Data()
         }
-        var rest = Data(buffer[lineStart...])
+        var rest = pending
+        rest.append(chunk[tailStart...])
         if rest.count > maxPending { rest = Data() }
-        return (lines, FileCursor(inode: inode, offset: newOffset, pending: rest))
+        return (lines, FileCursor(inode: inode, offset: newOffset, pending: rest), newOffset >= size)
     }
 }

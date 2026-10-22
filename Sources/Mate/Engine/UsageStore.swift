@@ -18,6 +18,7 @@ final class UsageStore: ObservableObject {
         /// Last completed attempt that was not a failure (success, or skipped because the agent's token expired).
         var lastAttempt: Date?
         var failures = 0
+        var lastFailure: Date?
         var inFlight = false
     }
 
@@ -37,6 +38,10 @@ final class UsageStore: ObservableObject {
     private var watcher: FileWatcher?
     private var reconciling: Set<ProviderID> = []
     private var reconcileAgain: Set<ProviderID> = []
+    /// "provider|configDir" whose keychain prompt the user denied: no automatic credential read until `refreshNow()`.
+    private var deniedDirs: Set<String> = []
+    /// In-flight agent-credential reads per "provider|configDir", shared so at most one keychain prompt is pending.
+    private var credentialReads: [String: Task<Data?, Error>] = [:]
 
     init(providers: [any Provider], vault: TokenVault, persistence: Persistence) {
         self.providers = providers
@@ -104,7 +109,9 @@ final class UsageStore: ObservableObject {
         scheduleFetches()
     }
 
+    /// Explicit user action: also retries config dirs whose keychain prompt was denied.
     func refreshNow() {
+        deniedDirs.removeAll()
         Task {
             for p in providers { await reconcile(p) }
             for a in registry.accounts where !a.hidden { fetchState[a.id]?.failures = 0; await fetch(a.id) }
@@ -139,7 +146,7 @@ final class UsageStore: ObservableObject {
                     let unchanged = before[id].map { $0.0 == .agent && $0.1 == dir } ?? false
                     if unchanged, (try? vault.read(p.id, accountID: id)) != nil { continue }
                     do {
-                        if let data = try await p.agentCredentials(configDir: dir) { storeShadow(id, data: data, configDir: dir) }
+                        if let data = try await agentCredentials(p, configDir: dir) { storeShadow(id, data: data, configDir: dir) }
                     } catch {
                         Log.error("\(p.id.rawValue): could not read the agent's credentials for \(id): \(error)")
                     }
@@ -152,6 +159,27 @@ final class UsageStore: ObservableObject {
             }
         } while reconcileAgain.contains(p.id)
         scheduleFetches()
+    }
+
+    /// The agent's credentials for `configDir`. Reads are shared per dir (one keychain prompt at a time); a denied
+    /// prompt marks the dir and its accounts `.error("keychainDenied")` and blocks automatic reads until `refreshNow()`.
+    private func agentCredentials(_ p: any Provider, configDir dir: String) async throws -> Data? {
+        let key = "\(p.id.rawValue)|\(dir)"
+        if deniedDirs.contains(key) { throw ProviderError.credentialsDenied }
+        if let running = credentialReads[key] { return try await running.value }
+        let task = Task { try await p.agentCredentials(configDir: dir) }
+        credentialReads[key] = task
+        defer { credentialReads[key] = nil }
+        do {
+            return try await task.value
+        } catch ProviderError.credentialsDenied {
+            deniedDirs.insert(key)
+            Log.error("\(p.id.rawValue): keychain access denied for \(dir); waiting for an explicit refresh")
+            for a in registry.accounts where a.provider == p.id && a.owner == .agent && a.agentConfigDir == dir {
+                setStatus(a.id, .error("keychainDenied"))
+            }
+            throw ProviderError.credentialsDenied
+        }
     }
 
     /// Keeps Mate's copy of an agent-owned account's credentials current, so it can take over refreshing them
@@ -210,6 +238,7 @@ final class UsageStore: ObservableObject {
             setStatus(id, status)
         case .failed(let status):
             state.failures += 1
+            state.lastFailure = now
             setStatus(id, status)
         }
         fetchState[id] = state
@@ -221,8 +250,10 @@ final class UsageStore: ObservableObject {
         guard let dir = account.agentConfigDir else { return .skipped(.stale) }
         let data: Data
         do {
-            guard let d = try await p.agentCredentials(configDir: dir) else { return .skipped(.stale) }
+            guard let d = try await agentCredentials(p, configDir: dir) else { return .skipped(.stale) }
             data = d
+        } catch ProviderError.credentialsDenied {
+            return .skipped(.error("keychainDenied"))
         } catch {
             Log.error("\(account.id): agent credentials unreadable: \(error)")
             return .failed(.error("keychain"))
@@ -237,7 +268,8 @@ final class UsageStore: ObservableObject {
         do {
             return .success(try await p.fetchUsage(account: account, tokens: tokens))
         } catch ProviderError.unauthorized {
-            return .skipped(.stale) // the agent will refresh it
+            return .skipped(.stale) // FetchPolicy: always .markStale for agent-owned; the agent will refresh it
+
         } catch {
             return .failed(Self.status(error))
         }
@@ -263,7 +295,8 @@ final class UsageStore: ObservableObject {
             }
             do {
                 return .success(try await p.fetchUsage(account: account, tokens: tokens))
-            } catch ProviderError.unauthorized where !refreshed {
+            } catch ProviderError.unauthorized
+                where FetchPolicy.onUnauthorized(owner: .mate, alreadyRefreshed: refreshed) == .refreshAndRetry {
                 tokens = try await refreshAndSave(account, p, tokens, original: original)
                 return .success(try await p.fetchUsage(account: account, tokens: tokens))
             }
@@ -281,7 +314,18 @@ final class UsageStore: ObservableObject {
         let new = try await p.refresh(tokens, accountID: account.id, registry: registry)
         // Rotated refresh tokens invalidate the old ones: persist before anything else uses them.
         guard registry.canRefresh(account.id) else { throw ProviderError.refreshNotAllowed }
-        try vault.write(account.provider, accountID: account.id, data: p.encodeCredentials(new, preserving: original))
+        let data = try p.encodeCredentials(new, preserving: original)
+        do {
+            try vault.write(account.provider, accountID: account.id, data: data)
+        } catch {
+            do {
+                try vault.write(account.provider, accountID: account.id, data: data)
+            } catch {
+                // The old refresh token is already rotated away: without the new one saved the session is gone.
+                Log.error("\(account.id): could not save refreshed tokens (\(error)); the account needs a new login")
+                throw ProviderError.unauthorized
+            }
+        }
         return new
     }
 
@@ -331,7 +375,8 @@ final class UsageStore: ObservableObject {
         // Never fetched: now (`FetchSchedule` counts a nil last success from `now`).
         if s.lastAttempt == nil && s.failures == 0 { return now }
         var next = schedule.nextFetch(lastSuccess: s.lastAttempt, failures: s.failures,
-                                      active: isActive(a.provider, now: now), panelOpen: panelOpen, now: now)
+                                      active: isActive(a.provider, now: now), panelOpen: panelOpen, now: now,
+                                      lastFailure: s.lastFailure)
         if s.failures == 0, let reset = snapshots[a.id]?.windows.compactMap(\.resetsAt).filter({ $0 > now.addingTimeInterval(-5) }).min() {
             next = min(next, max(reset.addingTimeInterval(5), now))
         }
@@ -340,7 +385,7 @@ final class UsageStore: ObservableObject {
 
     /// Hidden accounts and expired Mate copies (they need a new login) are not fetched on a schedule.
     private func isSchedulable(_ a: Account) -> Bool {
-        !a.hidden && a.status != .expired && fetchState[a.id]?.inFlight != true
+        !a.hidden && !(a.owner == .mate && a.status == .expired) && fetchState[a.id]?.inFlight != true
     }
 
     private func scheduleFetches() {

@@ -212,3 +212,23 @@ private func obs(_ identity: String, _ dir: String = "~/.claude", email: String?
     #expect(actions.isEmpty)
     #expect(r.accounts[0].owner == .mate && r.accounts[0].agentConfigDir == nil)
 }
+
+/// An account whose Mate copy expired comes back to life when the agent logs in to it again.
+@Test func reloginClearsExpired() {
+    var r = AccountRegistry()
+    _ = r.reconcile(provider: .claude, observed: [obs("a")], scannedDirs: ["~/.claude"])
+    _ = r.reconcile(provider: .claude, observed: [obs("b")], scannedDirs: ["~/.claude"])
+    let i = r.accounts.firstIndex { $0.id == "claude:a" }!
+    #expect(r.accounts[i].owner == .mate)
+    r.accounts[i].status = .expired
+    _ = r.reconcile(provider: .claude, observed: [obs("a")], scannedDirs: ["~/.claude"])
+    #expect(r.accounts[i].owner == .agent)
+    #expect(r.accounts[i].status == .ok)
+}
+
+@Test func unauthorizedNeverRefreshesAgentOwned() {
+    #expect(FetchPolicy.onUnauthorized(owner: .agent, alreadyRefreshed: false) == .markStale)
+    #expect(FetchPolicy.onUnauthorized(owner: .agent, alreadyRefreshed: true) == .markStale)
+    #expect(FetchPolicy.onUnauthorized(owner: .mate, alreadyRefreshed: false) == .refreshAndRetry)
+    #expect(FetchPolicy.onUnauthorized(owner: .mate, alreadyRefreshed: true) == .markExpired)
+}

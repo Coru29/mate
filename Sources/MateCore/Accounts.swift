@@ -67,6 +67,20 @@ public struct SwitchPlan: Equatable, Sendable {
 
 public enum RefreshDecision: Equatable, Sendable { case useAsIs, refresh, stale }
 
+public enum UnauthorizedAction: Equatable, Sendable { case markStale, refreshAndRetry, markExpired }
+
+public enum FetchPolicy {
+    /// What a 401 from the usage endpoint means. Agent-owned tokens are never refreshed by Mate: the agent will
+    /// refresh them, so the account is only stale. A Mate-owned account refreshes once; a 401 after that is a dead
+    /// session.
+    public static func onUnauthorized(owner: TokenOwner, alreadyRefreshed: Bool) -> UnauthorizedAction {
+        switch owner {
+        case .agent: .markStale
+        case .mate: alreadyRefreshed ? .markExpired : .refreshAndRetry
+        }
+    }
+}
+
 /// Single-owner token rules. At any time exactly one party refreshes an account's
 /// tokens: the agent (CLI) or Mate, never both, because refresh tokens rotate and
 /// a second refresher would invalidate the first one's copy.
@@ -103,6 +117,8 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
             if let found = accounts.firstIndex(where: { $0.id == id }) {
                 i = found
                 if let email { accounts[i].email = email }
+                // A fresh agent login revives an account whose Mate copy had died.
+                if accounts[i].owner == .mate && accounts[i].status == .expired { accounts[i].status = .ok }
                 accounts[i].owner = .agent
                 if accounts[i].agentConfigDir.map({ dirs.contains($0) }) != true {
                     accounts[i].agentConfigDir = dirs[0]

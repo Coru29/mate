@@ -72,7 +72,11 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
     }
 
     func agentCredentials(configDir: String) async throws -> Data? {
-        if let data = try Keychain.read(service: keychainService(configDir), account: nil) { return data }
+        do {
+            if let data = try Keychain.read(service: keychainService(configDir), account: nil) { return data }
+        } catch let e as KeychainError where e.isDenied {
+            throw ProviderError.credentialsDenied
+        }
         let file = credentialsFile(configDir)
         guard FileManager.default.fileExists(atPath: file) else { return nil }
         return try Data(contentsOf: URL(fileURLWithPath: file))
@@ -132,18 +136,23 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
         return Array(Set(out)).sorted()
     }
 
-    func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> [TokenEvent] {
+    func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool) {
         var events: [TokenEvent] = []
+        var more = false
         for path in changedPaths where path.hasSuffix(".jsonl") {
             let url = URL(fileURLWithPath: path)
-            guard let (lines, cursor) = try? IncrementalReader.read(url: url, cursor: cursors[path]) else {
+            guard let r = try? IncrementalReader.read(url: url, cursor: cursors[path]) else {
                 cursors[path] = nil
                 continue
             }
-            cursors[path] = cursor
+            cursors[path] = r.cursor
+            more = more || !r.atEnd
             let session = url.deletingPathExtension().lastPathComponent
-            events += lines.compactMap { ClaudeLog.events(from: $0, sessionID: session) }
+            // Per line: JSONSerialization's autoreleased objects of a whole 8 MB chunk would otherwise pile up.
+            for line in r.lines {
+                if let e = autoreleasepool(invoking: { ClaudeLog.events(from: line, sessionID: session) }) { events.append(e) }
+            }
         }
-        return events
+        return (events, more)
     }
 }

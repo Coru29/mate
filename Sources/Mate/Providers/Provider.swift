@@ -6,6 +6,8 @@ enum ProviderError: Error, Equatable, CustomStringConvertible {
     case rateLimited
     case unavailable(String)
     case refreshNotAllowed
+    /// The user denied macOS's keychain prompt for the agent's credentials.
+    case credentialsDenied
 
     var description: String {
         switch self {
@@ -13,6 +15,7 @@ enum ProviderError: Error, Equatable, CustomStringConvertible {
         case .rateLimited: "rate limited"
         case .unavailable(let why): why
         case .refreshNotAllowed: "refresh not allowed (agent-owned account)"
+        case .credentialsDenied: "keychain access denied"
         }
     }
 
@@ -60,7 +63,8 @@ protocol Provider: AnyObject, Sendable {
     func exchangeRefreshToken(_ tokens: OAuthTokens) async throws -> OAuthTokens
     /// The provider's log files among (or, for directories, under) `paths`.
     func logFiles(in paths: [String]) -> [String]
-    func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> [TokenEvent]
+    /// Reads at most one bounded chunk per file; `more` is true while some file has unread bytes left.
+    func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool)
 }
 
 extension Provider {

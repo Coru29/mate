@@ -77,8 +77,8 @@ final class FakeProvider: Provider, @unchecked Sendable {
     func logFiles(in paths: [String]) -> [String] { ["fake:log"] }
 
     /// A week of scripted history, once.
-    func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> [TokenEvent] {
-        guard changedPaths.contains("fake:log"), cursors["fake:log"] == nil else { return [] }
+    func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool) {
+        guard changedPaths.contains("fake:log"), cursors["fake:log"] == nil else { return ([], false) }
         cursors["fake:log"] = FileCursor(inode: 0, offset: 1, pending: Data())
         var events: [TokenEvent] = []
         let models = ["claude-opus-4-5", "claude-sonnet-4-5"]
@@ -91,6 +91,6 @@ final class FakeProvider: Provider, @unchecked Sendable {
                                          dedupeKey: "fake-\(day)-\(i)"))
             }
         }
-        return events
+        return (events, false)
     }
 }
