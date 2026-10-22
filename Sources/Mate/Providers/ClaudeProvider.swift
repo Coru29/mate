@@ -45,6 +45,12 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
         ClaudeCredentials.keychainService(configDir: dir == Self.defaultDir ? nil : dir)
     }
 
+    /// The account of Claude Code's item, found from attributes only (no prompt).
+    private func keychainAccount(_ dir: String) -> String? {
+        ClaudeCredentials.keychainAccount(candidates: Keychain.accountNames(service: keychainService(dir)),
+                                          userName: NSUserName())
+    }
+
     // MARK: Sessions
 
     func observeSessions() async -> SessionScan {
@@ -53,7 +59,7 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
         for dir in configDirs {
             do {
                 // Attributes only: no keychain prompt just to know whether the agent is logged in.
-                let hasCredentials = try Keychain.exists(service: keychainService(dir))
+                let hasCredentials = keychainAccount(dir) != nil
                     || FileManager.default.fileExists(atPath: credentialsFile(dir))
                 let file = configFile(dir)
                 var account: (uuid: String, email: String?)?
@@ -74,7 +80,8 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
 
     func agentCredentials(configDir: String) async throws -> Data? {
         do {
-            if let data = try Keychain.readForeign(service: keychainService(configDir), account: nil) { return data }
+            if let account = keychainAccount(configDir),
+               let data = try Keychain.readForeign(service: keychainService(configDir), account: account) { return data }
         } catch let e as KeychainError where e.isDenied {
             throw ProviderError.credentialsDenied
         }

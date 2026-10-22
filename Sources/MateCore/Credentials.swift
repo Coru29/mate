@@ -73,6 +73,14 @@ public enum ClaudeCredentials {
         let hex = SHA256.hash(data: Data(nfc.utf8)).map { String(format: "%02x", $0) }.joined()
         return base + "-" + hex.prefix(8)
     }
+
+    /// The account attribute of Claude Code's item among the service's items: the one named after the macOS user
+    /// (what Claude Code writes), else the only one. Several others and none of them the user's → nil: a stray item
+    /// of the same service is never read as the session.
+    public static func keychainAccount(candidates: [String], userName: String) -> String? {
+        if candidates.contains(userName) { return userName }
+        return candidates.count == 1 ? candidates[0] : nil
+    }
 }
 
 public enum CodexCredentials {

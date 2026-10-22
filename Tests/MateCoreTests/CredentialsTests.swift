@@ -160,3 +160,12 @@ func fixture(_ name: String) throws -> Data {
     #expect(try GeminiCredentials.identity(from: Data(#"{"access_token":"ya29.x"}"#.utf8)) == nil)
     #expect(throws: (any Error).self) { try GeminiCredentials.identity(from: Data("{".utf8)) }
 }
+
+/// Claude Code names its item's account after the macOS user; a stray item of the same service is never read.
+@Test func claudeKeychainAccountPrefersTheUserName() {
+    #expect(ClaudeCredentials.keychainAccount(candidates: ["coru"], userName: "coru") == "coru")
+    #expect(ClaudeCredentials.keychainAccount(candidates: ["other", "coru"], userName: "coru") == "coru")
+    #expect(ClaudeCredentials.keychainAccount(candidates: ["Claude Code"], userName: "coru") == "Claude Code")
+    #expect(ClaudeCredentials.keychainAccount(candidates: ["a", "b"], userName: "coru") == nil)
+    #expect(ClaudeCredentials.keychainAccount(candidates: [], userName: "coru") == nil)
+}
