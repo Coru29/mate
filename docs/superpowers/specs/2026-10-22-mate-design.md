@@ -152,7 +152,7 @@ Fuentes conocidas (de Agent Limit y del proyecto open source CodexBar); todas si
 
 | Proveedor | Sesión local | Uso (ventanas) | Logs de tokens |
 |---|---|---|---|
-| Claude | Llavero, servicio `Claude Code-credentials` (con `CLAUDE_CONFIG_DIR` el nombre lleva un sufijo derivado de la carpeta); identidad en `~/.claude.json` (`oauthAccount`) | `GET https://api.anthropic.com/api/oauth/usage` con `anthropic-beta: oauth-2025-04-20`: `five_hour`, `seven_day`, `seven_day_opus`/`sonnet`, uso extra | `~/.claude/projects/**/*.jsonl` (`message.usage`, modelo, hora, `cwd`) |
+| Claude | Llavero, servicio `Claude Code-credentials` (con `CLAUDE_CONFIG_DIR` el nombre lleva un sufijo derivado de la carpeta); identidad en `~/.claude.json` (`oauthAccount`) | `GET https://api.anthropic.com/api/oauth/usage` con `anthropic-beta: oauth-2025-04-20`: `five_hour`, `seven_day`, `seven_day_opus`/`sonnet`, uso extra. Refresh: `POST https://platform.claude.com/v1/oauth/token` | `~/.claude/projects/**/*.jsonl` (`message.usage`, modelo, hora, `cwd`) |
 | Codex | `~/.codex/auth.json` (o `$CODEX_HOME`); email del `id_token` | `GET https://chatgpt.com/backend-api/wham/usage` con `ChatGPT-Account-Id`: ventana primaria y secundaria. Respaldo: los eventos `token_count` del log traen `rate_limits` | `~/.codex/sessions/**/rollout-*.jsonl` |
 | Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (`cursorAuth/accessToken`, email) | API de uso de cursor.com: ciclo de facturación, % incluido y gasto on-demand | — |
 | Gemini CLI | `~/.gemini/oauth_creds.json` | Cupo diario por modelo (`retrieveUserQuota` de Code Assist) | logs de `~/.gemini` si traen tokens |
