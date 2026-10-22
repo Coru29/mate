@@ -1,0 +1,131 @@
+import Testing
+import Foundation
+@testable import MateCore
+
+private let now = Date(timeIntervalSince1970: 1_792_670_400) // 2026-10-22T12:00:00Z
+private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
+
+@Test func claudeUsageWindows() throws {
+    let w = try ClaudeUsage.windows(from: fixture("claude-usage.json"), now: now)
+    #expect(w.map(\.kind) == [.session, .weekly, .weeklyModel("Sonnet")])
+    #expect(w[0] == LimitWindow(kind: .session, usedPercent: 37, resetsAt: at(1_792_692_000), duration: 18_000))
+    #expect(w[1].usedPercent == 12.5)
+    #expect(w[1].duration == 604_800)
+    // Fractional seconds are parsed (…09:00:00.123456Z).
+    #expect(abs(w[1].resetsAt!.timeIntervalSince1970 - 1_793_091_600.123) < 0.01)
+    #expect(w[1].detail == "USD 12,40 de 20")
+    #expect(w[0].detail == nil)
+}
+
+@Test func claudeResetsAtAcceptsOffset() throws {
+    let json = #"{"five_hour":{"utilization":1,"resets_at":"2026-10-22T15:00:00-03:00"}}"#
+    let w = try ClaudeUsage.windows(from: Data(json.utf8), now: now)
+    #expect(w[0].resetsAt == at(1_792_692_000))
+}
+
+@Test func claudeProfileIdentity() throws {
+    let id = try ClaudeProfile.identity(from: fixture("claude-profile.json"))
+    #expect(id.uuid == "11111111-2222-3333-4444-555555555555")
+    #expect(id.email == "a@example.com")
+}
+
+@Test func codexUsageWindows() throws {
+    let w = try CodexUsage.windows(from: fixture("codex-usage.json"), now: now)
+    #expect(w == [
+        LimitWindow(kind: .session, usedPercent: 22, resetsAt: at(1_792_674_000), duration: 18_000),
+        LimitWindow(kind: .weekly, usedPercent: 40, resetsAt: at(1_792_870_400), duration: 604_800),
+    ])
+}
+
+@Test func codexWindowLengthPicksKind() throws {
+    func kind(_ seconds: Int) throws -> WindowKind {
+        let json = #"{"rate_limit":{"primary_window":{"used_percent":1,"limit_window_seconds":\#(seconds),"reset_after_seconds":60}}}"#
+        let w = try CodexUsage.windows(from: Data(json.utf8), now: now)
+        #expect(w[0].resetsAt == now.addingTimeInterval(60))
+        return w[0].kind
+    }
+    #expect(try kind(21_600) == .session)
+    #expect(try kind(21_601) == .weekly)
+    #expect(try kind(604_800) == .weekly)
+}
+
+@Test func codexLogRateLimits() throws {
+    let w = try CodexUsage.windows(fromLogRateLimits: fixture("codex-log-rate-limits.json"), now: now)
+    #expect(w == [
+        LimitWindow(kind: .session, usedPercent: 15, resetsAt: now.addingTimeInterval(7200), duration: 18_000),
+        LimitWindow(kind: .weekly, usedPercent: 33, resetsAt: at(1_792_870_400), duration: 604_800),
+    ])
+}
+
+@Test func cursorUsageWindow() throws {
+    let w = try CursorUsage.windows(from: fixture("cursor-usage.json"), now: now)
+    #expect(w.count == 1)
+    #expect(w[0].kind == .billingCycle)
+    #expect(w[0].usedPercent == 60)
+    #expect(w[0].resetsAt == at(1_793_491_200)) // 2026-11-01T00:00:00Z
+    #expect(abs(w[0].duration! - 31 * 86_400) < 0.01)
+    #expect(w[0].detail == "USD 5,23 a demanda")
+}
+
+@Test func geminiQuotaWindows() throws {
+    let w = try GeminiQuota.windows(from: fixture("gemini-quota.json"), now: now)
+    #expect(w == [
+        LimitWindow(kind: .dailyModel("gemini-2.5-pro"), usedPercent: 25, resetsAt: at(1_792_713_600), duration: 86_400),
+        LimitWindow(kind: .dailyModel("gemini-2.5-flash"), usedPercent: 0, resetsAt: at(1_792_713_600), duration: 86_400),
+    ])
+}
+
+@Test func copilotUsageWindow() throws {
+    let w = try CopilotUsage.windows(from: fixture("copilot-usage.json"), now: now)
+    #expect(w == [LimitWindow(kind: .premiumRequests, usedPercent: 60, resetsAt: at(1_793_491_200),
+                              duration: nil, detail: "180 de 300")])
+}
+
+@Test func copilotUnlimitedIsNoWindow() throws {
+    #expect(try CopilotUsage.windows(from: fixture("copilot-usage-unlimited.json"), now: now).isEmpty)
+}
+
+@Test func grokSpendWindow() throws {
+    let w = try GrokSpend.windows(from: fixture("grok-spend.json"), budget: 20, now: now)
+    #expect(w.count == 1)
+    #expect(w[0].kind == .monthlyBudget)
+    #expect(w[0].usedPercent == 62)
+    #expect(w[0].detail == "USD 12,40 de 20")
+    #expect(w[0].resetsAt == at(1_793_491_200)) // start of next month, UTC
+    #expect(throws: (any Error).self) { try GrokSpend.windows(from: fixture("grok-spend.json"), budget: 0, now: now) }
+}
+
+@Test func malformedResponsesThrowNotCrash() throws {
+    let bad: [String] = ["{}", "[]", #"{"five_hour":{"utilization":"#, "", "null"]
+    let wrongType: [String: String] = [
+        "claude": #"{"five_hour":{"utilization":"high","resets_at":"2026-10-22T18:00:00Z"}}"#,
+        "codex": #"{"rate_limit":{"primary_window":{"used_percent":"x"}}}"#,
+        "cursor": #"{"billingCycleEnd":5,"individualUsage":"x"}"#,
+        "gemini": #"{"buckets":[{"modelId":"m","remainingFraction":"x"}]}"#,
+        "copilot": #"{"quota_snapshots":{"premium_interactions":{"percent_remaining":"x"}}}"#,
+        "grok": #"{"spend":{"val":{"a":1}}}"#,
+    ]
+    func all(_ s: String) -> [() throws -> Any] {
+        let d = Data(s.utf8)
+        return [
+            { try ClaudeUsage.windows(from: d, now: now) },
+            { try CodexUsage.windows(from: d, now: now) },
+            { try CodexUsage.windows(fromLogRateLimits: d, now: now) },
+            { try CursorUsage.windows(from: d, now: now) },
+            { try GeminiQuota.windows(from: d, now: now) },
+            { try CopilotUsage.windows(from: d, now: now) },
+            { try GrokSpend.windows(from: d, budget: 20, now: now) },
+            { try ClaudeProfile.identity(from: d) },
+        ]
+    }
+    for s in bad { for f in all(s) { #expect(throws: (any Error).self) { try f() } } }
+    let fns: [String: () throws -> Any] = [
+        "claude": { try ClaudeUsage.windows(from: Data(wrongType["claude"]!.utf8), now: now) },
+        "codex": { try CodexUsage.windows(from: Data(wrongType["codex"]!.utf8), now: now) },
+        "cursor": { try CursorUsage.windows(from: Data(wrongType["cursor"]!.utf8), now: now) },
+        "gemini": { try GeminiQuota.windows(from: Data(wrongType["gemini"]!.utf8), now: now) },
+        "copilot": { try CopilotUsage.windows(from: Data(wrongType["copilot"]!.utf8), now: now) },
+        "grok": { try GrokSpend.windows(from: Data(wrongType["grok"]!.utf8), budget: 20, now: now) },
+    ]
+    for (_, f) in fns { #expect(throws: (any Error).self) { try f() } }
+}
