@@ -14,7 +14,7 @@ final class NotchWindow: NSPanel {
         isMovable = false
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
-        isFloatingPanel = true
+        // Not `isFloatingPanel`: setting it resets `level` to .floating, below the menu bar, which then takes the mouse.
         becomesKeyOnlyIfNeeded = false
         animationBehavior = .none
     }
