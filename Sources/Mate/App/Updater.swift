@@ -181,6 +181,7 @@ final class Updater {
         }
         Log.error("Update failed: \(error.localizedDescription)")
         if DebugCLI.isDebugUpdate { Self.report("debug-update failed: \(error.localizedDescription)") }
+        guard !DebugCLI.isHeadless else { return }
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = String(localized: "No se pudo actualizar automáticamente")

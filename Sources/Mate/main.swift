@@ -19,6 +19,10 @@ MainActor.assumeIsolated {
         Task { await DebugCLI.addAccount(provider) }
         app.run()
     }
+    if !DebugCLI.isFake && !CommandLine.arguments.contains(where: { $0.hasPrefix("--snapshot") })
+        && !SingleInstance.acquire(dataDir: Persistence.defaultDir(fake: false)) {
+        SingleInstance.handOffAndExit()
+    }
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate

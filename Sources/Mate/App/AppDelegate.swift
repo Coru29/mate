@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notch: NotchController?
     private var backend: SettingsBackend?
     private var updatesObserver: NSObjectProtocol?
+    private var handOffObserver: NSObjectProtocol?
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -23,6 +24,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.store = store
         self.notch = notch
         self.backend = backend
+        if DebugCLI.isHeadless {
+            // Test runs: no notch, no guide, no window of any kind on the user's screen; only `--fake` fetches.
+            store.onAlert = { event in Log.info("alert \(event.kind) \(event.accountID) (headless)") }
+            if DebugCLI.isFake { store.start() }
+            if DebugCLI.isDebugUpdate { configureUpdates() }
+            if !DebugCLI.isFake { handOffObserver = SingleInstance.observe { Log.info("reopen (headless)") } }
+            Log.info("Mate started headless\(DebugCLI.isFake ? " (fake)" : "")")
+            return
+        }
         notch.show()
         if WelcomeWindowController.hasOnboarded && !DebugCLI.forceWelcome {
             store.start()
@@ -35,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         DebugCLI.scheduleUIChecks(notch: notch, store: store)
         configureUpdates()
+        if !DebugCLI.isFake {
+            handOffObserver = SingleInstance.observe { [weak self] in self?.reopen() }
+        }
         Log.info("Mate started\(DebugCLI.isFake ? " (fake)" : "")")
     }
 
@@ -64,10 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Opening Mate again.
+    /// Opening Mate again, or a second copy that handed off (`SingleInstance`).
     @MainActor
     private func reopen() {
         Log.info("reopen")
+        guard !DebugCLI.isHeadless else { return }
         if WelcomeWindowController.shared.isOpen, let backend {
             WelcomeWindowController.shared.show(backend: backend, onStart: {}, onFinish: {})
         } else {

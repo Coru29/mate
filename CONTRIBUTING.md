@@ -18,7 +18,9 @@ scripts/measure-idle.sh         # CPU and memory at rest (run before every relea
 
 Live checks without your real accounts: `build/Mate.app/Contents/MacOS/Mate --fake` runs two scripted Claude-shaped
 accounts with no network and no keychain. Point `MATE_DATA_DIR` and `MATE_DEFAULTS_SUITE` at scratch values so a test
-run never touches your real data and preferences. `--open-panel`, `--demo-alert`, `--open-usage` and the
+run never touches your real data and preferences, and set `MATE_HEADLESS=1` so it draws nothing on the screen (no
+notch, no welcome guide, no window) while you keep using your real Mate. Only one Mate runs per data folder: a second
+copy asks the first to open Settings and quits (`--fake` and `--snapshot*` runs are exempt). `--open-panel`, `--demo-alert`, `--open-usage` and the
 `--snapshot*` switches are documented in `Sources/Mate/App/DebugCLI.swift`.
 
 ## Adding a provider
@@ -85,7 +87,11 @@ To measure without your real accounts:
 
 ```sh
 MATE_DATA_DIR=$(mktemp -d) MATE_DEFAULTS_SUITE=mate-idle scripts/measure-idle.sh --app build/Mate.app -- --fake
+defaults delete mate-idle
 ```
+
+A `--fake` run is headless, so it measures the engine without drawing the notch; measure the installed app (or
+`--pid` of the running one) for the full picture.
 
 ## Translations
 

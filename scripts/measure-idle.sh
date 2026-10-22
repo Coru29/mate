@@ -7,8 +7,10 @@
 #   --app      the bundle to launch (default /Applications/Mate.app). The binary is started directly, so variables
 #              such as MATE_DATA_DIR and MATE_DEFAULTS_SUITE reach it; only that process is stopped at the end.
 #   --pid      measure a Mate that is already running instead (it is left running).
+#   MATE_IDLE_RAW=<file>  also keeps top's raw samples there (to find what wakes it up when it fails).
 #   --warmup / --samples   default 60 s and 600 samples (the release check; shorter runs are only for trying it).
-#   -- args    passed to the app, e.g. `-- --fake` for a run with the scripted provider and no network.
+#   -- args    passed to the app, e.g. `-- --fake` for a run with the scripted provider and no network; such a run
+#              gets MATE_HEADLESS=1, so it never draws on the screen (and measures the engine without the notch).
 # Don't hover the notch while it runs: the numbers are for the panel closed.
 set -euo pipefail
 export LC_NUMERIC=C  # top prints "0.3"; awk must read it the same way in any locale
@@ -43,6 +45,8 @@ if [ -z "$PID" ]; then
       exit 1
     fi
   fi
+  # A --fake run is headless: nothing of it shows on the screen (no notch, no welcome guide, no window).
+  if [[ " $* " == *" --fake "* ]]; then export MATE_HEADLESS=1; fi
   "$BIN" "$@" >/dev/null 2>&1 &
   STARTED=$!
   PID=$STARTED
@@ -60,6 +64,7 @@ OUT=$(mktemp)
 top -l $((SAMPLES + 1)) -s 1 -pid "$PID" -stats pid,cpu,mem > "$OUT"
 kill -0 "$PID" 2>/dev/null || { rm -f "$OUT"; echo "Mate se cerró durante la medición." >&2; exit 1; }
 
+if [ -n "${MATE_IDLE_RAW:-}" ]; then cp "$OUT" "$MATE_IDLE_RAW"; fi
 STATUS=0
 awk -v pid="$PID" -v maxcpu="$MAX_CPU" -v maxmb="$MAX_MB" '
   function mb(v,   n, u) {

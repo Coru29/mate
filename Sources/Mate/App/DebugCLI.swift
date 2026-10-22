@@ -15,6 +15,10 @@ enum DebugCLI {
     static var isFake: Bool { CommandLine.arguments.contains("--fake") }
     static var isDump: Bool { CommandLine.arguments.contains("--dump") }
     static var isIndex: Bool { CommandLine.arguments.contains("--index") }
+    /// `MATE_HEADLESS=1`: a test run that shows nothing on the user's screen (no notch, no welcome guide, no window;
+    /// reopening is only logged). With `--fake` the store runs as usual (`scripts/measure-idle.sh`); without it the
+    /// store never starts, so the agents' sessions and the keychain are not touched (single-instance checks).
+    static var isHeadless: Bool { ProcessInfo.processInfo.environment["MATE_HEADLESS"] == "1" }
     /// `--debug-update`: installs the newest release of the `updateFeedURL` test feed (see `Updater`).
     static var isDebugUpdate: Bool { CommandLine.arguments.contains("--debug-update") }
 
