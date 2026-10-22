@@ -14,6 +14,10 @@ final class NotchController {
     private static let openDelay: TimeInterval = 0.15
     private static let closeDelay: TimeInterval = 0.4
     private static let scrollThreshold: CGFloat = 24
+    /// About when an opening spring reaches 60 % of its travel.
+    private static let contentDelay: CFTimeInterval = 0.12
+    /// Closing: the content fades for this long before the shape starts retracting.
+    private static let contentFadeOut: CFTimeInterval = 0.08
 
     var onOpenUsage: () -> Void = {}
     var onOpenSettings: () -> Void = {}
@@ -47,6 +51,7 @@ final class NotchController {
     private var generation = 0
 
     private var hosting: PanelHostingView?
+    private var panelView: PanelContainerView?
     private var alertView: NSView?
     private var openTimer: Timer?
     private var closeTimer: Timer?
@@ -69,7 +74,7 @@ final class NotchController {
 
     func show() {
         window.contentView = root
-        root.addSubview(pill)
+        root.content.addSubview(pill)
         root.onHover = { [weak self] inside in self?.hoverChanged(inside) }
         root.onClick = { [weak self] event in self?.clicked(event) }
         root.onRightClick = { [weak self] event in self?.showMenu(event) }
@@ -83,6 +88,7 @@ final class NotchController {
 
         layout()
         window.orderFrontRegardless()
+        scheduleAnimationSnapshots()
     }
 
     func presentAlert(_ e: AlertEvent) {
@@ -111,14 +117,13 @@ final class NotchController {
         let host = PanelHostingView(rootView: makePanel())
         hosting = host
         panelRect = NotchLayout.panelRect(notch: notch, contentHeight: host.fittingSize.height, screen: info)
-        host.alphaValue = 0
-        root.addSubview(host, positioned: .below, relativeTo: pill)
+        let container = PanelContainerView(content: host)
+        panelView = container
+        root.content.addSubview(container, positioned: .below, relativeTo: pill)
         mode = .open
         transition(to: panelRect, radius: Self.openRadius)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
-            host.animator().alphaValue = 1
-        }
+        // The content comes in once the shape is about 60 % open.
+        NotchMotion.reveal(container, delay: Self.contentDelay)
         addMonitors()
         store.panelDidOpen()
         Log.info("panel opened")
@@ -139,14 +144,12 @@ final class NotchController {
         mode = .closed
         store.panelDidClose()
         Log.info("panel closed")
-        if let host = hosting {
-            hosting = nil
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.1
-                host.animator().alphaValue = 0
-            }, completionHandler: { host.removeFromSuperview() })
+        hosting = nil
+        if let container = panelView {
+            panelView = nil
+            NotchMotion.fadeOut(container) { container.removeFromSuperview() }
         }
-        slideClosed()
+        slideClosed(after: Self.contentFadeOut)
     }
 
     // MARK: Layout
@@ -179,7 +182,8 @@ final class NotchController {
         if mode == .open {
             removeMonitors()
             cancel(&closeTimer)
-            hosting?.removeFromSuperview()
+            panelView?.removeFromSuperview()
+            panelView = nil
             hosting = nil
             store.panelDidClose()
         }
@@ -211,47 +215,92 @@ final class NotchController {
         rect.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
     }
 
-    /// Moves the window and re-places everything in it (the shape without animation).
-    private func setWindowFrame(_ frame: CGRect) {
+    /// The shape to animate from or to for `rect`. On a real notch the invisible closed shape (zero height) is
+    /// animated as the notch itself, so the panel morphs out of the notch and back into it.
+    private func visual(_ rect: CGRect) -> CGRect {
+        rect.height == 0 && !fakeNotch ? notch : rect
+    }
+
+    /// Moves the window (never animated) and re-places everything in it, the shape at rest.
+    /// `final` is false at the start of a transition: a pill that is going away stays until the shape is back.
+    private func setWindowFrame(_ frame: CGRect, final: Bool = true) {
         window.setFrame(frame.integral, display: false)
         root.frame = CGRect(origin: .zero, size: window.frame.size)
         pill.frame = local(pillRect)
-        pill.isHidden = !pillShown
-        hosting?.frame = local(panelRect)
+        if pillShown || final { pill.isHidden = !pillShown }
+        panelView?.frame = local(panelRect)
         alertView?.frame = local(CGRect(x: alertRect.minX, y: alertRect.minY, width: alertRect.width,
                                         height: AlertBanner.lineHeight))
-        root.setShape(NotchShapeView.path(local(shapeRect), radius: shapeRadius), animated: false)
+        root.setShape(NotchShapeView.path(local(shapeRect), radius: shapeRadius))
         syncHover()
     }
 
-    /// Springs the shape to `target`. The window first grows to hold both sizes, then shrinks to the new one.
-    private func transition(to target: CGRect, radius: CGFloat, then completion: (() -> Void)? = nil) {
+    /// Morphs the shape to `target` with its top edge pinned to the screen top. The window is set once to hold
+    /// both shapes (with room for the spring's overshoot sideways and downward, never upward), the shape animates
+    /// inside it, and the window shrinks to the final shape when the animation ends.
+    private func transition(to target: CGRect, radius: CGFloat, spring: NotchShapeView.Spring = .open,
+                            delay: CFTimeInterval = 0, then completion: (() -> Void)? = nil) {
         generation += 1
         let gen = generation
-        setWindowFrame(shapeRect.union(target).union(stripRect))
+        let oldOrigin = window.frame.origin
+        let inFlight = root.isAnimatingShape ? root.presentedPath : nil
+        let fromRect = visual(shapeRect), fromRadius = shapeRadius
+        let toRect = visual(target)
+
+        let both = fromRect.union(toRect).union(shapeRect).union(target).union(stripRect)
+        let slack: CGFloat = 12
+        setWindowFrame(CGRect(x: both.minX - slack, y: both.minY - slack, width: both.width + 2 * slack,
+                              height: both.height + slack), final: false)
         shapeRect = target
         shapeRadius = radius
-        root.setShape(NotchShapeView.path(local(target), radius: radius), animated: true) { [weak self] in
+
+        // An interrupted animation continues from where it is, moved into the new window's coordinates.
+        var shift = CGAffineTransform(translationX: oldOrigin.x - window.frame.minX, y: oldOrigin.y - window.frame.minY)
+        let from = inFlight?.copy(using: &shift) ?? NotchShapeView.path(local(fromRect), radius: fromRadius)
+        let to = NotchShapeView.path(local(toRect), radius: radius)
+        let finish = { [weak self] in
             guard let self, gen == self.generation else { return }
             self.setWindowFrame(target.union(self.stripRect))
             completion?()
         }
+        if NotchMotion.reduceMotion {
+            root.crossfade(to: to, completion: finish)
+        } else {
+            root.animateShape(from: from, to: to, spring: spring, delay: delay, completion: finish)
+        }
     }
 
-    private func slideClosed() {
+    private func slideClosed(after delay: CFTimeInterval = 0) {
         closing = true
         let wasKey = window.isKeyWindow
-        transition(to: closedRect, radius: Self.closedRadius) { [weak self] in
+        transition(to: closedRect, radius: Self.closedRadius, spring: .close, delay: delay) { [weak self] in
             guard let self else { return }
             self.closing = false
             // The pill may have appeared or gone while sliding.
-            if self.shapeRect != self.closedRect { self.transition(to: self.closedRect, radius: Self.closedRadius) }
+            if self.shapeRect != self.closedRect { self.transitionClosed() }
             // Hand the keyboard back to the app the user was in (the panel became key only through a click).
             if wasKey || self.window.isKeyWindow {
                 self.window.orderOut(nil)
                 self.window.orderFrontRegardless()
             }
             self.showNextAlert()
+        }
+    }
+
+    /// The closed shape changed (pill shown or hidden, menu bar shown or hidden): the pill slides out of the
+    /// notch's right edge with its ring fading in, or fades and retracts into the notch.
+    private func transitionClosed() {
+        let showing = pillShown && pill.isHidden
+        let hiding = !pillShown && !pill.isHidden
+        if hiding { NotchMotion.fadeOut(pill, duration: 0.08) }
+        transition(to: closedRect, radius: Self.closedRadius, spring: hiding ? .close : .open,
+                   delay: hiding ? 0.05 : 0) { [weak self] in
+            guard let self, !self.pillShown else { return }
+            NotchMotion.restore(self.pill)
+        }
+        if showing {
+            NotchMotion.restore(pill)
+            NotchMotion.reveal(pill, delay: 0.1, duration: 0.2)
         }
     }
 
@@ -286,7 +335,7 @@ final class NotchController {
         updatePill()
         switch mode {
         case .closed:
-            if wasShown != pillShown && !closing { transition(to: closedRect, radius: Self.closedRadius) }
+            if wasShown != pillShown && !closing { transitionClosed() }
         case .open:
             resizePanel()
         case .alert:
@@ -319,22 +368,23 @@ final class NotchController {
         alertRect = CGRect(x: x, y: info.frame.maxY - notch.height - AlertBanner.lineHeight, width: width,
                            height: notch.height + AlertBanner.lineHeight)
         alertView = view
-        view.alphaValue = 0
-        root.addSubview(view, positioned: .below, relativeTo: pill)
+        view.wantsLayer = true
+        root.content.addSubview(view, positioned: .below, relativeTo: pill)
         mode = .alert
         transition(to: alertRect, radius: Self.openRadius)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.25
-            view.animator().alphaValue = 1
-        }
+        NotchMotion.reveal(view, delay: Self.contentDelay)
         alertTimer = oneShot(AlertBanner.visibleFor) { [weak self] in self?.dismissAlert() }
     }
 
     private func dismissAlert() {
         guard mode == .alert else { return }
-        removeAlertView()
+        cancel(&alertTimer)
+        if let view = alertView {
+            alertView = nil
+            NotchMotion.fadeOut(view) { view.removeFromSuperview() }
+        }
         mode = .closed
-        slideClosed()
+        slideClosed(after: Self.contentFadeOut)
     }
 
     private func removeAlertView() {
@@ -459,7 +509,7 @@ final class NotchController {
 
     private func refreshClosedShape() {
         updatePill()
-        if mode == .closed && !closing { transition(to: closedRect, radius: Self.closedRadius) }
+        if mode == .closed && !closing { transitionClosed() }
     }
 
     private func preferencesChanged() {

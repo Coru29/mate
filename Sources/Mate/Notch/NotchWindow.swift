@@ -64,6 +64,10 @@ final class NotchShapeView: NSView {
     var onRightClick: (NSEvent) -> Void = { _ in }
 
     private let shape = CAShapeLayer()
+    /// Holds the pill, panel and alert views; masked by the same path as the black shape, so content never shows
+    /// outside it while the shape morphs (the pill slides out of the notch, the panel is uncovered as it grows).
+    let content = NotchContentView()
+    private let clip = CAShapeLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -73,6 +77,10 @@ final class NotchShapeView: NSView {
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.004).cgColor
         shape.fillColor = NSColor.black.cgColor
         layer?.addSublayer(shape)
+        content.frame = bounds
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
+        content.layer?.mask = clip
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -90,25 +98,72 @@ final class NotchShapeView: NSView {
     override func rightMouseDown(with event: NSEvent) { onRightClick(event) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    /// Sets the black shape; `animated` uses a spring and calls `completion` when it settles.
-    func setShape(_ path: CGPath, animated: Bool, completion: (() -> Void)? = nil) {
+    /// Spring as SwiftUI describes it (response, damping fraction), turned into Core Animation's terms.
+    struct Spring {
+        var response: Double
+        var damping: Double
+        /// Cut-off for the animation's duration: the tail of a spring is invisible, and the window shrinks only
+        /// when it ends.
+        var maxDuration: Double
+
+        static let open = Spring(response: 0.42, damping: 0.82, maxDuration: 0.7)
+        static let close = Spring(response: 0.28, damping: 1, maxDuration: 0.42)
+    }
+
+    var isAnimatingShape: Bool { shape.animation(forKey: "path") != nil }
+
+    /// What is on screen now (mid-animation, the in-flight path), in this view's coordinates.
+    var presentedPath: CGPath? { shape.presentation()?.path ?? shape.path }
+
+    /// Sets the black shape at once.
+    func setShape(_ path: CGPath) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        if animated, let from = shape.presentation()?.path ?? shape.path {
-            let spring = CASpringAnimation(keyPath: "path")
-            spring.fromValue = from
-            spring.toValue = path
-            spring.mass = 1
-            spring.stiffness = 260
-            spring.damping = 26
-            spring.duration = spring.settlingDuration
-            CATransaction.setCompletionBlock(completion)
-            shape.add(spring, forKey: "path")
-        } else {
-            shape.removeAnimation(forKey: "path")
-            CATransaction.setCompletionBlock(completion)
+        for l in [shape, clip] {
+            l.removeAnimation(forKey: "path")
+            l.path = path
         }
-        shape.path = path
+        CATransaction.commit()
+    }
+
+    /// Springs the black shape from `from` to `to`, starting after `delay`; `completion` runs when it ends (or is
+    /// replaced by a newer animation).
+    func animateShape(from: CGPath, to: CGPath, spring s: Spring, delay: CFTimeInterval = 0,
+                      completion: @escaping () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let spring = CASpringAnimation(keyPath: "path")
+        spring.fromValue = from
+        spring.toValue = to
+        spring.mass = 1
+        spring.stiffness = pow(2 * .pi / s.response, 2)
+        spring.damping = 4 * .pi * s.damping / s.response
+        spring.duration = min(spring.settlingDuration, s.maxDuration)
+        if delay > 0 {
+            spring.beginTime = CACurrentMediaTime() + delay
+            spring.fillMode = .backwards
+        }
+        CATransaction.setCompletionBlock(completion)
+        for l in [shape, clip] {
+            l.add(spring, forKey: "path")
+            l.path = to
+        }
+        CATransaction.commit()
+    }
+
+    /// Reduce Motion: the new state crossfades in, nothing moves.
+    func crossfade(to path: CGPath, completion: @escaping () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = 0.2
+        CATransaction.setCompletionBlock(completion)
+        layer?.add(fade, forKey: "crossfade")
+        for l in [shape, clip] {
+            l.removeAnimation(forKey: "path")
+            l.path = path
+        }
         CATransaction.commit()
     }
 
@@ -130,5 +185,23 @@ final class NotchShapeView: NSView {
                    control2: CGPoint(x: rect.minX, y: rect.minY + r * (1 - k)))
         p.closeSubpath()
         return p
+    }
+}
+
+/// The masked layer for the notch's content views. Empty areas fall through to `NotchShapeView`, which routes
+/// clicks by rect and takes the first click.
+final class NotchContentView: NSView {
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var isFlipped: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
     }
 }
