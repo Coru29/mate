@@ -45,10 +45,14 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
         ClaudeCredentials.keychainService(configDir: dir == Self.defaultDir ? nil : dir)
     }
 
-    /// The account of Claude Code's item, found from attributes only (no prompt).
-    private func keychainAccount(_ dir: String) -> String? {
-        ClaudeCredentials.keychainAccount(candidates: Keychain.accountNames(service: keychainService(dir)),
-                                          userName: NSUserName())
+    /// The account of Claude Code's item (nil: no item), found from attributes only (no prompt). Throws when the
+    /// keychain cannot be read or the items are ambiguous: neither may look like a logout.
+    private func keychainAccount(_ dir: String) throws -> String? {
+        switch ClaudeKeychainLookup.classify(names: try Keychain.accountNames(service: keychainService(dir)), userName: NSUserName()) {
+        case .found(let account): return account
+        case .none: return nil
+        case .ambiguous: throw ProviderError.unavailable("ambiguous keychain items")
+        }
     }
 
     // MARK: Sessions
@@ -59,7 +63,7 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
         for dir in configDirs {
             do {
                 // Attributes only: no keychain prompt just to know whether the agent is logged in.
-                let hasCredentials = keychainAccount(dir) != nil
+                let hasCredentials = try keychainAccount(dir) != nil
                     || FileManager.default.fileExists(atPath: credentialsFile(dir))
                 let file = configFile(dir)
                 var account: (uuid: String, email: String?)?
@@ -80,7 +84,7 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
 
     func agentCredentials(configDir: String) async throws -> Data? {
         do {
-            if let account = keychainAccount(configDir),
+            if let account = try keychainAccount(configDir),
                let data = try Keychain.readForeign(service: keychainService(configDir), account: account) { return data }
         } catch let e as KeychainError where e.isDenied {
             throw ProviderError.credentialsDenied

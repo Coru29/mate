@@ -161,11 +161,12 @@ func fixture(_ name: String) throws -> Data {
     #expect(throws: (any Error).self) { try GeminiCredentials.identity(from: Data("{".utf8)) }
 }
 
-/// Claude Code names its item's account after the macOS user; a stray item of the same service is never read.
-@Test func claudeKeychainAccountPrefersTheUserName() {
-    #expect(ClaudeCredentials.keychainAccount(candidates: ["coru"], userName: "coru") == "coru")
-    #expect(ClaudeCredentials.keychainAccount(candidates: ["other", "coru"], userName: "coru") == "coru")
-    #expect(ClaudeCredentials.keychainAccount(candidates: ["Claude Code"], userName: "coru") == "Claude Code")
-    #expect(ClaudeCredentials.keychainAccount(candidates: ["a", "b"], userName: "coru") == nil)
-    #expect(ClaudeCredentials.keychainAccount(candidates: [], userName: "coru") == nil)
+/// Claude Code names its item's account after the macOS user; a stray item of the same service is never read, and
+/// items none of which can be told apart are ambiguous (never "logged out").
+@Test func claudeKeychainLookupClassifiesTheItems() {
+    #expect(ClaudeKeychainLookup.classify(names: ["coru"], userName: "coru") == .found("coru"))
+    #expect(ClaudeKeychainLookup.classify(names: ["other", "coru"], userName: "coru") == .found("coru"))
+    #expect(ClaudeKeychainLookup.classify(names: ["Claude Code"], userName: "coru") == .found("Claude Code"))
+    #expect(ClaudeKeychainLookup.classify(names: ["a", "b"], userName: "coru") == .ambiguous)
+    #expect(ClaudeKeychainLookup.classify(names: [], userName: "coru") == .none)
 }

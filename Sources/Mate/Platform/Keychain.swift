@@ -165,7 +165,7 @@ enum Keychain {
         // is stored reads whole. A later successful write drops the stale ones.
         try toolAddVerified(service: service, head)
         let current = Set(chunks.map(\.account))
-        for name in accountNames(service: service) where OwnItemLayout.isChunk(name, of: account) && !current.contains(name) {
+        for name in (try? accountNames(service: service)) ?? [] where OwnItemLayout.isChunk(name, of: account) && !current.contains(name) {
             do { try toolDelete(service: service, account: name) } catch {
                 Log.error("keychain: could not drop a stale \(service) chunk: \(error)")
             }
@@ -202,7 +202,7 @@ enum Keychain {
 
     /// The head and every chunk of `account`.
     private static func toolDeleteAll(service: String, account: String) throws {
-        for name in accountNames(service: service) where OwnItemLayout.isChunk(name, of: account) {
+        for name in (try? accountNames(service: service)) ?? [] where OwnItemLayout.isChunk(name, of: account) {
             try toolDelete(service: service, account: name)
         }
         if case .tool = try state(service: service, account: account) { try toolDelete(service: service, account: account) }
@@ -261,14 +261,17 @@ enum Keychain {
         return true
     }
 
-    /// The account attributes of every item of `service` (attributes only, no prompt).
-    static func accountNames(service: String) -> [String] {
+    /// The account attributes of every item of `service` (attributes only, no prompt). Throws on any status but
+    /// success and "not found" (a locked or missing keychain is not an empty one).
+    static func accountNames(service: String) throws -> [String] {
         var query = base(service: service, account: nil)
         query[kSecReturnAttributes as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitAll
         var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let items = out as? [[String: Any]] else { return [] }
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        if status == errSecItemNotFound { return [] }
+        guard status == errSecSuccess else { throw KeychainError.status(status) }
+        guard let items = out as? [[String: Any]] else { throw KeychainError.status(errSecDecode) }
         return items.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
     }
 

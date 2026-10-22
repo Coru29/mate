@@ -26,7 +26,7 @@ final class GrokProvider: Provider, @unchecked Sendable {
     static func accountID(teamID: String) -> String { AccountRegistry.accountID(provider: .grok, identity: teamID) }
 
     /// The stored keys' account names (attributes only), without the chunk items of a long value.
-    private static var keyNames: [String] { Keychain.accountNames(service: service).filter { !$0.contains("#") } }
+    private static var keyNames: [String] { ((try? Keychain.accountNames(service: service)) ?? []).filter { !$0.contains("#") } }
 
     /// Mate's own items, through the shared cached vault.
     private static var vault: KeychainVault { .shared }

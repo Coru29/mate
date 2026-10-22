@@ -73,13 +73,23 @@ public enum ClaudeCredentials {
         let hex = SHA256.hash(data: Data(nfc.utf8)).map { String(format: "%02x", $0) }.joined()
         return base + "-" + hex.prefix(8)
     }
+}
 
-    /// The account attribute of Claude Code's item among the service's items: the one named after the macOS user
-    /// (what Claude Code writes), else the only one. Several others and none of them the user's → nil: a stray item
-    /// of the same service is never read as the session.
-    public static func keychainAccount(candidates: [String], userName: String) -> String? {
-        if candidates.contains(userName) { return userName }
-        return candidates.count == 1 ? candidates[0] : nil
+/// Which of the items of Claude Code's keychain service is its session.
+public enum ClaudeKeychainLookup: Equatable, Sendable {
+    /// The item's account attribute.
+    case found(String)
+    /// No item: no keychain session.
+    case none
+    /// Items exist but none can be told to be Claude Code's: not a logout, the dir counts as unread.
+    case ambiguous
+
+    /// The item named after the macOS user (what Claude Code writes), else the only one. A stray item of the same
+    /// service is never read as the session.
+    public static func classify(names: [String], userName: String) -> Self {
+        if names.contains(userName) { return .found(userName) }
+        if names.isEmpty { return .none }
+        return names.count == 1 ? .found(names[0]) : .ambiguous
     }
 }
 
