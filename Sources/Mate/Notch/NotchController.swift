@@ -3,19 +3,6 @@ import Combine
 import SwiftUI
 import MateCore
 
-/// Preferences the notch reads, with the documented defaults.
-enum NotchPrefs {
-    private static func value<T>(_ key: PrefKey) -> T? {
-        UserDefaults.mate.object(forKey: key.rawValue) as? T ?? Preferences.defaults[key.rawValue] as? T
-    }
-
-    static var showPillAlways: Bool { value(.showPillAlways) ?? false }
-    static var screenChoice: ScreenChoice { ScreenChoice(rawValue: value(.screenChoice) ?? "") ?? .builtIn }
-    static var systemNotifications: Bool { value(.systemNotifications) ?? false }
-    static var providerOrder: [String] { value(.providerOrder) ?? [] }
-    static var disabledProviders: [String] { value(.disabledProviders) ?? [] }
-}
-
 /// The notch UI: one window whose frame always equals the visible black shape (plus the hover strip over the
 /// notch). Closed it shows the pill; hovering opens the panel; alerts drop from the notch. Everything is driven by
 /// events and one-shot timers; animations run only while the shape changes.
@@ -26,15 +13,16 @@ final class NotchController {
     private static let openRadius: CGFloat = 18
     private static let openDelay: TimeInterval = 0.15
     private static let closeDelay: TimeInterval = 0.4
+    private static let scrollThreshold: CGFloat = 24
 
     var onOpenUsage: () -> Void = {}
     var onOpenSettings: () -> Void = {}
 
     private enum Mode { case closed, open, alert }
 
-    private let store: UsageStore
+    let store: UsageStore
     private let window = NotchWindow()
-    private let root = NotchShapeView()
+    let root = NotchShapeView()
     private let pill = PillView()
     private let banner = AlertBanner()
 
@@ -48,6 +36,8 @@ final class NotchController {
     /// The shape is sliding back to its closed size; alerts wait for it.
     private var closing = false
     private var hovering = false
+    /// The right-click menu is up: the mouse is on the menu, so leaving the shape must not close the panel.
+    private var menuOpen = false
     /// Target of the black shape, in screen coordinates.
     private var shapeRect = CGRect.zero
     private var shapeRadius = closedRadius
@@ -167,23 +157,15 @@ final class NotchController {
         let mouseID = screens.first { NSMouseInRect(mouse, $0.frame, false) }?.displayID
         guard let info = NotchLayout.pickScreen(screens.map(\.info), choice: screenChoice, mouseScreen: mouseID),
               let screen = screens.first(where: { $0.displayID == info.id }) else {
+            endWithoutAnimation()
+            screenInfo = nil
             window.orderOut(nil)
             return
         }
         screenInfo = info
         (notch, fakeNotch) = NotchLayout.notchRect(on: info)
         menuBarVisible = screen.isMenuBarVisible
-        // A screen change ends whatever was showing, without animation.
-        if mode == .open {
-            removeMonitors()
-            hosting?.removeFromSuperview()
-            hosting = nil
-            store.panelDidClose()
-        }
-        if mode == .alert { removeAlertView() }
-        mode = .closed
-        closing = false
-        generation += 1
+        endWithoutAnimation()
         updatePill()
         shapeRect = closedRect
         shapeRadius = Self.closedRadius
@@ -192,10 +174,31 @@ final class NotchController {
         showNextAlert()
     }
 
+    /// A screen change ends whatever was showing, without animation.
+    private func endWithoutAnimation() {
+        if mode == .open {
+            removeMonitors()
+            cancel(&closeTimer)
+            hosting?.removeFromSuperview()
+            hosting = nil
+            store.panelDidClose()
+        }
+        if mode == .alert { removeAlertView() }
+        mode = .closed
+        closing = false
+        generation += 1
+    }
+
     private var pillRect: CGRect { NotchLayout.pillRect(notch: notch) }
 
     /// What the window covers when closed: the notch (hover opens the panel even with the pill hidden) and the pill.
-    private var stripRect: CGRect { pillShown ? notch.union(pillRect) : notch }
+    /// A fake notch with the menu bar hidden (another app in full screen) keeps only a 2 pt edge at the very top,
+    /// so it takes no clicks from that app.
+    private var stripRect: CGRect {
+        if pillShown { return notch.union(pillRect) }
+        if fakeNotch && !menuBarVisible { return CGRect(x: notch.minX, y: notch.maxY - 2, width: notch.width, height: 2) }
+        return notch
+    }
 
     /// The closed black shape. A real notch needs no drawing; a fake one is drawn while the menu bar shows.
     private var closedRect: CGRect {
@@ -346,7 +349,8 @@ final class NotchController {
         hovering = inside
         if inside {
             cancel(&closeTimer)
-            if mode != .open && openTimer == nil {
+            // An alert dropping under a still cursor must not turn into the panel; a click still opens it.
+            if mode == .closed && openTimer == nil {
                 openTimer = oneShot(Self.openDelay) { [weak self] in
                     guard let self else { return }
                     self.openTimer = nil
@@ -355,7 +359,7 @@ final class NotchController {
             }
         } else {
             cancel(&openTimer)
-            if mode == .open && closeTimer == nil {
+            if mode == .open && closeTimer == nil && !menuOpen {
                 closeTimer = oneShot(Self.closeDelay) { [weak self] in
                     self?.closeTimer = nil
                     self?.closePanel()
@@ -365,6 +369,14 @@ final class NotchController {
     }
 
     /// Frame changes under a still mouse send no enter/exit events: compare by hand.
+    func menuWillOpen() { menuOpen = true }
+
+    /// The mouse may have left while the menu was up (no close was scheduled then): decide now.
+    func menuDidClose() {
+        menuOpen = false
+        hoverChanged(window.frame.contains(NSEvent.mouseLocation))
+    }
+
     private func syncHover() {
         let inside = window.frame.contains(NSEvent.mouseLocation)
         if inside != hovering { hoverChanged(inside) }
@@ -406,29 +418,15 @@ final class NotchController {
         guard event.window === window else { return false }
         if !event.momentumPhase.isEmpty { return true }
         if event.phase == .began { scrollAccumulated = 0 }
-        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 10
-        scrollAccumulated += abs(event.scrollingDeltaX) > abs(delta) ? -event.scrollingDeltaX : delta
-        if abs(scrollAccumulated) >= 24 {
+        // A mouse wheel reports lines: one notch must reach the threshold on its own.
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * Self.scrollThreshold
+        let deltaX = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : event.scrollingDeltaX * Self.scrollThreshold
+        scrollAccumulated += abs(deltaX) > abs(delta) ? -deltaX : delta
+        if abs(scrollAccumulated) >= Self.scrollThreshold {
             store.selectAccount(step: scrollAccumulated < 0 ? 1 : -1)
             scrollAccumulated = 0
         }
         return true
-    }
-
-    private func showMenu(_ event: NSEvent) {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        menu.addItem(ClosureMenuItem(String(localized: "Uso…")) { [weak self] in self?.onOpenUsage() })
-        menu.addItem(ClosureMenuItem(String(localized: "Configuración…")) { [weak self] in self?.onOpenSettings() })
-        menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(String(localized: "Actualizar ahora")) { [weak self] in self?.store.refreshNow() })
-        let paused = store.isPaused
-        menu.addItem(ClosureMenuItem(paused ? String(localized: "Reanudar") : String(localized: "Pausar")) { [weak self] in
-            self?.store.setPaused(!paused)
-        })
-        menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(String(localized: "Salir de Mate")) { NSApp.terminate(nil) })
-        NSMenu.popUpContextMenu(menu, with: event, for: root)
     }
 
     // MARK: Notifications
@@ -485,7 +483,7 @@ final class NotchController {
     private func oneShot(_ interval: TimeInterval, _ block: @escaping () -> Void) -> Timer {
         let t = Timer(timeInterval: interval, repeats: false) { _ in MainActor.assumeIsolated { block() } }
         t.tolerance = interval * 0.1
-        RunLoop.main.add(t, forMode: .default)
+        RunLoop.main.add(t, forMode: .common)
         return t
     }
 
@@ -493,24 +491,4 @@ final class NotchController {
         timer?.invalidate()
         timer = nil
     }
-}
-
-/// The panel's hosting view: takes the first click and passes right-clicks to the shape view for the menu.
-final class PanelHostingView: NSHostingView<PanelView> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func rightMouseDown(with event: NSEvent) { superview?.rightMouseDown(with: event) }
-}
-
-private final class ClosureMenuItem: NSMenuItem {
-    private let handler: () -> Void
-
-    init(_ title: String, handler: @escaping () -> Void) {
-        self.handler = handler
-        super.init(title: title, action: #selector(run), keyEquivalent: "")
-        target = self
-    }
-
-    required init(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    @objc private func run() { handler() }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import MateCore
 
 /// The pill right of the notch: a ring (2.5 pt stroke) and the percent of the tightest window. Plain layers, no
 /// SwiftUI, nothing redrawn unless the value changes.
@@ -29,6 +30,9 @@ final class PillView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    // Clicks go to the shape view, which routes them by rect (and takes the first click).
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
