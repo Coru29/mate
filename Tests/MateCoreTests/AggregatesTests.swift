@@ -168,3 +168,36 @@ private func days(_ n: Int) -> TimeInterval { TimeInterval(n) * 86_400 }
     let back = try JSONDecoder().decode(UsageAggregates.self, from: Data(json.utf8))
     #expect(back.byModel(last: 30, now: now, calendar: cal).first?.tokens == 100)
 }
+
+/// The dedupe hashes are most of the index: saved as one packed string per day, not thousands of JSON numbers.
+@Test func dedupeKeysArePackedAndSurviveARoundTrip() throws {
+    var agg = UsageAggregates()
+    for i in 0..<500 { agg.add(event(at: now, tokens: 1, key: "k\(i)"), calendar: cal) }
+    let data = try JSONEncoder().encode(agg)
+    let obj = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let bucket = try #require((obj["buckets"] as? [[String: Any]])?.first)
+    #expect(bucket["keys"] == nil)
+    #expect(bucket["packedKeys"] is String)
+    #expect(try JSONSerialization.data(withJSONObject: bucket).count < 500 * 12)
+    var back = try JSONDecoder().decode(UsageAggregates.self, from: data)
+    #expect(back.byModel(last: 1, now: now, calendar: cal).first?.tokens == 500)
+    let dup = back.add(event(at: now, tokens: 1, key: "k7"), calendar: cal)
+    let fresh = back.add(event(at: now, tokens: 1, key: "new"), calendar: cal)
+    #expect(!dup && fresh)
+}
+
+@Test func unpackedDedupeKeysStillDecode() throws {
+    var agg = UsageAggregates()
+    agg.add(event(at: now, tokens: 100, key: "k1"), calendar: cal)
+    let obj = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(agg)) as? [String: Any])
+    var buckets = try #require(obj["buckets"] as? [[String: Any]])
+    for i in buckets.indices {
+        buckets[i]["packedKeys"] = nil
+        buckets[i]["keys"] = [NSNumber(value: UsageAggregates.fnv1a("k1"))]
+    }
+    var old = obj
+    old["buckets"] = buckets
+    var back = try JSONDecoder().decode(UsageAggregates.self, from: JSONSerialization.data(withJSONObject: old))
+    let dup = back.add(event(at: now, tokens: 100, key: "k1"), calendar: cal)
+    #expect(!dup)
+}

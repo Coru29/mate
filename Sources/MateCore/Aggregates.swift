@@ -19,10 +19,27 @@ public struct UsageAggregates: Codable, Sendable {
         var providerModels: [String: [String: ModelTotals]] = [:]
         /// Per account id, then model; only events whose account could be attributed (for the account filter).
         var accountModels: [String: [String: ModelTotals]] = [:]
-        /// FNV-1a 64 hashes of the `dedupeKey`s counted into this day; lives and dies with the bucket.
+        /// FNV-1a 64 hashes of the `dedupeKey`s counted into this day; lives and dies with the bucket. Saved packed
+        /// (`packedKeys`: little-endian UInt64s, base64), since they are most of the index.
         var keys: Set<UInt64> = []
 
+        private enum CodingKeys: String, CodingKey {
+            case day, providers, models, providerModels, accountModels, keys, packedKeys
+        }
+
         init(day: Date) { self.day = day }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(day, forKey: .day)
+            try c.encode(providers, forKey: .providers)
+            try c.encode(models, forKey: .models)
+            try c.encode(providerModels, forKey: .providerModels)
+            try c.encode(accountModels, forKey: .accountModels)
+            var packed = Data(capacity: keys.count * 8)
+            for k in keys { withUnsafeBytes(of: k.littleEndian) { packed.append(contentsOf: $0) } }
+            try c.encode(packed, forKey: .packedKeys)
+        }
 
         // Buckets persisted before the per-provider and per-account slices existed still decode.
         init(from decoder: Decoder) throws {
@@ -32,7 +49,20 @@ public struct UsageAggregates: Codable, Sendable {
             models = try c.decode([String: ModelTotals].self, forKey: .models)
             providerModels = try c.decodeIfPresent([String: [String: ModelTotals]].self, forKey: .providerModels) ?? [:]
             accountModels = try c.decodeIfPresent([String: [String: ModelTotals]].self, forKey: .accountModels) ?? [:]
-            keys = try c.decode(Set<UInt64>.self, forKey: .keys)
+            if let packed = try c.decodeIfPresent(Data.self, forKey: .packedKeys) {
+                guard packed.count % 8 == 0 else {
+                    throw DecodingError.dataCorruptedError(forKey: .packedKeys, in: c, debugDescription: "not 8-byte hashes")
+                }
+                var set = Set<UInt64>(minimumCapacity: packed.count / 8)
+                packed.withUnsafeBytes { raw in
+                    for i in stride(from: 0, to: raw.count, by: 8) {
+                        set.insert(UInt64(littleEndian: raw.loadUnaligned(fromByteOffset: i, as: UInt64.self)))
+                    }
+                }
+                keys = set
+            } else {
+                keys = try c.decode(Set<UInt64>.self, forKey: .keys)
+            }
         }
     }
 
