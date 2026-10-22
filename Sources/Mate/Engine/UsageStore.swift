@@ -50,6 +50,8 @@ final class UsageStore: ObservableObject {
     private var deniedDirs: Set<String> = []
     /// In-flight agent-credential reads per "provider|configDir", shared so at most one keychain prompt is pending.
     private var credentialReads: [String: Task<Data?, Error>] = [:]
+    /// Whose tokens each agent blob seen holds, per "provider|sha256 of the blob": one lookup per token change.
+    private var blobIdentities: [String: String] = [:]
     /// Config dirs the user added as sources (`CLAUDE_CONFIG_DIR` / `CODEX_HOME`), per provider raw value. Kept
     /// apart from the accounts so an empty dir stays watched.
     private var configDirs: [String: [String]]
@@ -358,7 +360,9 @@ final class UsageStore: ObservableObject {
                     let unchanged = before[id].map { $0.0 == .agent && $0.1 == dir } ?? false
                     if unchanged, (try? vault.read(p.id, accountID: id)) != nil { continue }
                     do {
-                        if let data = try await agentCredentials(p, configDir: dir) { storeShadow(id, data: data, configDir: dir) }
+                        if let data = try await agentCredentials(p, configDir: dir) {
+                            await storeShadow(id, data: data, configDir: dir, p)
+                        }
                     } catch {
                         Log.error("\(p.id.rawValue): could not read the agent's credentials for \(id): \(error)")
                     }
@@ -406,16 +410,62 @@ final class UsageStore: ObservableObject {
     }
 
     /// Keeps Mate's copy of an agent-owned account's credentials current, so it can take over refreshing them
-    /// when the agent logs in to another account. Never writes the agent's own store.
-    private func storeShadow(_ id: String, data: Data, configDir: String) {
-        guard let a = registry.accounts.first(where: { $0.id == id }), a.owner == .agent,
-              a.agentConfigDir == configDir else { return }
-        if isOtherAccountsCopy(data, of: a) {
-            Log.info("\(id): agent credentials still belong to another account; not copied")
-            return
+    /// when the agent logs in to another account. Never writes the agent's own store. Returns whether `data` holds
+    /// this account's tokens (and so may be fetched with); a blob of another known account may update that
+    /// account's copy instead.
+    @discardableResult
+    private func storeShadow(_ id: String, data: Data, configDir: String, _ p: any Provider) async -> Bool {
+        func current() -> Account? {
+            registry.accounts.first { $0.id == id && $0.owner == .agent && $0.agentConfigDir == configDir }
         }
-        if (try? vault.read(a.provider, accountID: id)) == data { return }
-        do { try vault.write(a.provider, accountID: id, data: data) } catch { Log.error("vault write \(id): \(error)") }
+        guard let a = current() else { return false }
+        let decision = await attribution(data, for: a, p)
+        // Ownership may have moved during the lookup.
+        guard current() != nil else { return false }
+        switch decision {
+        case .store:
+            if (try? vault.read(a.provider, accountID: id)) == data { return true }
+            do { try vault.write(a.provider, accountID: id, data: data) } catch { Log.error("vault write \(id): \(error)") }
+            return true
+        case .redirect(let other):
+            Log.info("\(id): agent credentials belong to \(other); not used for \(id)")
+            redirectShadow(data, to: other, p)
+            return false
+        case .skip:
+            return false
+        }
+    }
+
+    /// Who the agent's blob belongs to. Mate's current copy of the account was checked when stored; a copy of
+    /// another account is that account's (during a `/login` the identity file can change before the credential
+    /// store). Anything else is asked of the provider once per blob; a failed lookup skips this round.
+    private func attribution(_ data: Data, for account: Account, _ p: any Provider) async -> ShadowAttribution {
+        if (try? vault.read(account.provider, accountID: account.id)) == data { return .store }
+        if isOtherAccountsCopy(data, of: account) { return .skip }
+        let key = "\(p.id.rawValue)|\(ShadowAttribution.blobKey(data))"
+        var identity = blobIdentities[key]
+        if identity == nil {
+            do {
+                guard let found = try await p.credentialsIdentity(data) else { return .store }
+                if blobIdentities.count >= 64 { blobIdentities.removeAll() }
+                blobIdentities[key] = found
+                identity = found
+            } catch {
+                Log.error("\(account.id): could not tell whose agent credentials these are (\(error)); not copied this round")
+            }
+        }
+        return ShadowAttribution.decide(blobIdentity: identity, observedIdentity: account.identity,
+                                        knownAccounts: registry.accounts.filter { $0.provider == account.provider })
+    }
+
+    /// The agent's blob holds `otherID`'s tokens: it replaces that account's copy only when its token is newer.
+    private func redirectShadow(_ data: Data, to otherID: String, _ p: any Provider) {
+        guard let other = registry.accounts.first(where: { $0.id == otherID }),
+              let blob = try? p.decodeCredentials(data) else { return }
+        let copy = (try? vault.read(other.provider, accountID: other.id)).flatMap { try? p.decodeCredentials($0) }
+        guard ShadowAttribution.replacesCopy(copyExpiresAt: copy.map { $0.expiresAt ?? .distantPast }, blobExpiresAt: blob.expiresAt)
+        else { return }
+        do { try vault.write(other.provider, accountID: other.id, data: data) } catch { Log.error("vault write \(other.id): \(error)") }
     }
 
     /// During a `/login` the identity file can change before the keychain item: the agent's store then still holds
@@ -484,10 +534,8 @@ final class UsageStore: ObservableObject {
             return .failed(.error("keychain"))
         }
         guard let tokens = try? p.decodeCredentials(data) else { return .failed(.error("credentials")) }
-        if !p.agentOnly {
-            if isOtherAccountsCopy(data, of: account) { return .skipped(.stale) }
-            storeShadow(account.id, data: data, configDir: dir)
-        }
+        // Never fetched with (nor attributed to this account) unless the blob is this account's.
+        if !p.agentOnly, !(await storeShadow(account.id, data: data, configDir: dir, p)) { return .skipped(.stale) }
         switch registry.refreshDecision(for: account.id, expiresAt: tokens.expiresAt, now: Date()) {
         case .stale: return .skipped(.stale)
         case .useAsIs, .refresh: break // `.refresh` never happens for an agent-owned account.

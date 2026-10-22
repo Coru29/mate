@@ -74,6 +74,10 @@ protocol Provider: AnyObject, Sendable {
     /// The user deleted `account` in Settings: forget anything of it the provider keeps in Mate's own store (Grok's
     /// key). Never touches an agent's credentials.
     func accountRemoved(_ account: Account) throws
+    /// The identity whose tokens the agent's blob `data` holds, asked of the provider itself (Claude: its profile
+    /// endpoint), so a blob read mid-`/login` is never copied or used as the wrong account's. nil: the provider
+    /// cannot tell, and the blob is taken as the observed session's. Throws when the lookup failed.
+    func credentialsIdentity(_ data: Data) async throws -> String?
 }
 
 extension Provider {
@@ -81,6 +85,7 @@ extension Provider {
     var alwaysActive: Bool { false }
     var agentOnly: Bool { false }
     func accountRemoved(_ account: Account) throws {}
+    func credentialsIdentity(_ data: Data) async throws -> String? { nil }
 
     /// Refreshes only an account Mate owns; an agent-owned account throws `.refreshNotAllowed` before any request.
     func refresh(_ tokens: OAuthTokens, accountID: String, registry: AccountRegistry) async throws -> OAuthTokens {

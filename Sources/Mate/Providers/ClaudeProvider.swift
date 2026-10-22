@@ -92,6 +92,10 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
 
     func decodeCredentials(_ data: Data) throws -> OAuthTokens { try ClaudeCredentials.decode(data) }
 
+    func credentialsIdentity(_ data: Data) async throws -> String? {
+        try await Self.profile(accessToken: decodeCredentials(data).accessToken).uuid
+    }
+
     func encodeCredentials(_ tokens: OAuthTokens, preserving original: Data?) throws -> Data {
         try ClaudeCredentials.encode(tokens, preserving: original)
     }
