@@ -23,6 +23,11 @@ Only the latest release is supported.
   `~/.claude.json`, keeping a copy to undo it.
 - **Tokens Mate owns** (accounts the agent stopped using, or added with Mate's own sign-in) and the Grok key live
   only in the keychain, under `io.github.coru29.Mate.<provider>`. Nothing secret is written to disk or to the logs.
+- **Mate's saved copies are as exposed as the agents' own sessions.** Mate creates its keychain items through
+  `/usr/bin/security`, so they live in your login keychain with Apple's `security` tool in their access list: any
+  process running as your user can read them with `security find-generic-password -w` without a prompt. That is the
+  same exposure as Claude Code's own `Claude Code-credentials` item (read the same way) and Codex's plaintext
+  `~/.codex/auth.json`: the keychain keeps them out of plain files, not away from other software you run.
 - **No telemetry.** Besides the providers, the only network request is the update check: `api.github.com/repos/Coru29/mate/releases`
   shortly after launch and once a day (it can be turned off in Settings → Updates), and the DMG download from
   GitHub when you accept an update.

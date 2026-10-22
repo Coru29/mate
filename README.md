@@ -34,7 +34,7 @@ Mate is inspired by [Agent Limit](https://agentlimit.app), a well-made paid app 
 - **Usage window**: tokens per day for the last 7 days and a 30-day breakdown by model with an estimated API-price cost, from the agents' local logs.
 - **Several accounts per agent**: picked up automatically when you `/login` with another account (Mate keeps a copy of the previous one), added with the provider's own sign-in (Claude and Codex), or by pointing at another `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Rename, color, hide or delete them.
 - **Macs without a notch and external displays**: Mate draws its own notch.
-- **Light**: native Swift, no polling. It reacts to file-system events and wakes up only to fetch usage (every 5 minutes while an agent is active, every 30 otherwise). About 0 % CPU and ~10 MB of memory at rest.
+- **Light**: native Swift, no polling. It reacts to file-system events and wakes up only to fetch usage (every 5 minutes while an agent is active, every 30 otherwise). About 0 % CPU and ~15 MB of memory at rest.
 - *Coming soon:* **Use in Claude Code**, a one-click switch of Claude Code's active account.
 
 ## Providers
@@ -69,7 +69,7 @@ macOS 14 Sonoma or later on Apple silicon.
 
 1. Download **Mate.dmg** from the newest release in [Releases](https://github.com/Coru29/mate/releases) (or build it, below) and drag **Mate** to Applications.
 2. Mate is not notarized by Apple, so macOS will not open it the first time. **Right-click the app → Open** (on recent macOS, go to **System Settings → Privacy & Security** and click **Open Anyway**), or run `xattr -dr com.apple.quarantine /Applications/Mate.app`.
-3. A short guide finds the agents signed in on your Mac. When macOS asks **"Mate wants to access … in your keychain"** (for Claude Code's item), enter your password and click **Always Allow**: Mate reads that item, and with "Always Allow" macOS doesn't ask again, not even after updates (they are signed with the same certificate).
+3. A short guide finds the agents signed in on your Mac. Claude Code keeps its session in the macOS keychain, and Mate reads it with Apple's `security` tool, so the prompt names `security`, not Mate: **"security wants to use your confidential information stored in “Claude Code-credentials” in your keychain"**. That is expected. Type your Mac's password and click **Always Allow**. The permission belongs to Apple's `security` tool, so it survives Mate's updates and macOS does not ask again. With a plain **Allow** it asks every time.
 
 Mate has no Dock icon and no menu-bar icon: it lives in the notch. Opening it again from Applications or Spotlight opens Settings.
 
@@ -98,7 +98,7 @@ build/Mate.app/Contents/MacOS/Mate --fake   # scripted accounts, no network, no 
 ## How it works
 
 - `MateCore` is a pure Swift library: the model, pace, alert thresholds, token ownership rules, the parsers of every provider's responses and logs, and the daily aggregates. It is covered by unit tests with anonymized fixtures.
-- The app (AppKit + SwiftUI) draws the notch in a non-activating panel above the menu bar that only takes mouse events where something is visible. Activity comes from one FSEvents stream over the agents' session folders; usage fetches, resets and the "idle" state are one-shot timers with a wide tolerance, and the background fetches and the daily update check go through `NSBackgroundActivityScheduler`. No repeating timers.
+- The app (AppKit + SwiftUI) draws the notch in a non-activating panel above the menu bar that only takes mouse events where something is visible. Activity comes from one FSEvents stream over the agents' session folders; usage fetches (in the background too), resets and the "idle" state are one-shot timers with a wide tolerance; only the daily update check goes through `NSBackgroundActivityScheduler`. No repeating timers.
 - Each provider implements one protocol (find sessions, read the identity, fetch usage, refresh when Mate owns the token, read logs incrementally). Adding an agent is adding a file.
 
 ## Credits

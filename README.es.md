@@ -34,7 +34,7 @@ Mate está inspirada en [Agent Limit](https://agentlimit.app), una app paga muy 
 - **Ventana de uso**: tokens por día de los últimos 7 días y el desglose de 30 días por modelo con un costo estimado a precio de API, desde los logs locales de los agentes.
 - **Varias cuentas por agente**: se suman solas cuando hacés `/login` con otra cuenta (Mate se queda con una copia de la anterior), con el login del propio proveedor (Claude y Codex) o apuntando a otro `CLAUDE_CONFIG_DIR` / `CODEX_HOME`. Renombralas, poneles color, ocultalas o borralas.
 - **Macs sin notch y pantallas externas**: Mate dibuja su propio notch.
-- **Liviana**: Swift nativo, sin polling. Reacciona a eventos del sistema de archivos y solo se despierta para pedir el uso (cada 5 minutos con un agente activo, cada 30 si no). Alrededor de 0 % de CPU y ~10 MB de memoria en reposo.
+- **Liviana**: Swift nativo, sin polling. Reacciona a eventos del sistema de archivos y solo se despierta para pedir el uso (cada 5 minutos con un agente activo, cada 30 si no). Alrededor de 0 % de CPU y ~15 MB de memoria en reposo.
 - *Próximamente:* **Usar en Claude Code**, para cambiar con un click la cuenta activa de Claude Code.
 
 ## Proveedores
@@ -69,7 +69,7 @@ macOS 14 Sonoma o posterior en Apple silicon.
 
 1. Bajá **Mate.dmg** del release más nuevo en [Releases](https://github.com/Coru29/mate/releases) (o compilalo, más abajo) y arrastrá **Mate** a Aplicaciones.
 2. Mate no está notarizada por Apple, así que macOS no la abre la primera vez. **Click derecho en la app → Abrir** (en macOS recientes, andá a **Configuración del Sistema → Privacidad y seguridad** y tocá **Abrir igualmente**), o corré `xattr -dr com.apple.quarantine /Applications/Mate.app`.
-3. Un asistente corto detecta los agentes que tienen sesión en tu Mac. Cuando macOS pregunte **"Mate quiere acceder a … de tu llavero"** (por el ítem de Claude Code), poné tu contraseña y tocá **Permitir siempre**: Mate lee ese ítem, y con "Permitir siempre" macOS no vuelve a preguntar, ni siquiera después de una actualización (vienen firmadas con el mismo certificado).
+3. Un asistente corto detecta los agentes que tienen sesión en tu Mac. Claude Code guarda su sesión en el llavero de macOS y Mate la lee con `security`, la herramienta de Apple, así que el aviso nombra a `security` y no a Mate: **"security quiere usar tu información confidencial almacenada en «Claude Code-credentials» en tu llavero"**. Es lo esperado. Escribí la contraseña de tu Mac y tocá **Permitir siempre**. El permiso queda a nombre de `security`, la herramienta de Apple, así que sobrevive a las actualizaciones de Mate y macOS no vuelve a preguntar. Con **Permitir** a secas, pregunta cada vez.
 
 Mate no tiene ícono en el Dock ni en la barra de menú: vive en el notch. Abrirla de nuevo desde Aplicaciones o Spotlight abre la Configuración.
 
@@ -98,7 +98,7 @@ build/Mate.app/Contents/MacOS/Mate --fake   # cuentas de prueba, sin red ni llav
 ## Cómo funciona
 
 - `MateCore` es una biblioteca de Swift pura: el modelo, el ritmo, los umbrales de alertas, las reglas de dueño del token, el parseo de las respuestas y los logs de cada proveedor y los agregados diarios. Está cubierta por tests con fixtures anonimizados.
-- La app (AppKit + SwiftUI) dibuja el notch en un panel no activante por encima de la barra de menú que solo toma eventos del mouse donde hay algo visible. La actividad sale de un único stream de FSEvents sobre las carpetas de sesiones de los agentes; los pedidos de uso, los resets y el estado "inactivo" son timers de una sola vez con tolerancia amplia, y los pedidos en reposo y el chequeo diario de actualizaciones pasan por `NSBackgroundActivityScheduler`. Ningún timer repetitivo.
+- La app (AppKit + SwiftUI) dibuja el notch en un panel no activante por encima de la barra de menú que solo toma eventos del mouse donde hay algo visible. La actividad sale de un único stream de FSEvents sobre las carpetas de sesiones de los agentes; los pedidos de uso (también en reposo), los resets y el estado "inactivo" son timers de una sola vez con tolerancia amplia; solo el chequeo diario de actualizaciones pasa por `NSBackgroundActivityScheduler`. Ningún timer repetitivo.
 - Cada proveedor implementa un protocolo (encontrar sesiones, leer la identidad, pedir el uso, refrescar cuando Mate es dueño del token, leer logs de a poco). Sumar un agente es sumar un archivo.
 
 ## Créditos
