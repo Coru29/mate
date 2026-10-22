@@ -7,6 +7,10 @@ extension NotchController {
         menu.autoenablesItems = false
         menu.addItem(ClosureMenuItem(String(localized: "Uso…")) { [weak self] in self?.onOpenUsage() })
         menu.addItem(ClosureMenuItem(String(localized: "Configuración…")) { [weak self] in self?.onOpenSettings() })
+        if let update = Updater.shared.available {
+            let version = update.version.description
+            menu.addItem(ClosureMenuItem(String(localized: "Actualizar a Mate \(version)…")) { Updater.shared.offerInstall() })
+        }
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(String(localized: "Actualizar ahora")) { [weak self] in self?.store.refreshNow() })
         let paused = store.isPaused

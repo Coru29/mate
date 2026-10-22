@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var store: UsageStore?
     private var notch: NotchController?
     private var backend: SettingsBackend?
+    private var updatesObserver: NSObjectProtocol?
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -33,20 +34,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
         }
         DebugCLI.scheduleUIChecks(notch: notch, store: store)
+        configureUpdates()
         Log.info("Mate started\(DebugCLI.isFake ? " (fake)" : "")")
+    }
+
+    /// The daily update check follows Configuración → Actualizaciones. `--fake` runs never reach GitHub; with a
+    /// test feed, `--debug-update` installs from it.
+    @MainActor
+    private func configureUpdates() {
+        if DebugCLI.isDebugUpdate {
+            Task { await Updater.shared.installForTesting() }
+            return
+        }
+        guard !DebugCLI.isFake else { return }
+        let apply = {
+            let on = UserDefaults.mate.object(forKey: PrefKey.checkUpdates.rawValue) as? Bool ?? true
+            Updater.shared.configure(automatic: on)
+        }
+        apply()
+        updatesObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
+                                                                 object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { apply() }
+        }
     }
 
     /// Opening Mate again (Finder, Spotlight, Aplicaciones) opens Configuración, or brings the welcome guide forward.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        MainActor.assumeIsolated {
-            Log.info("reopen")
-            if WelcomeWindowController.shared.isOpen, let backend {
-                WelcomeWindowController.shared.show(backend: backend, onStart: {}, onFinish: {})
-            } else {
-                SettingsWindowController.shared.show()
-            }
-        }
+        MainActor.assumeIsolated { reopen() }
         return false
+    }
+
+    /// Opening Mate again.
+    @MainActor
+    private func reopen() {
+        Log.info("reopen")
+        if WelcomeWindowController.shared.isOpen, let backend {
+            WelcomeWindowController.shared.show(backend: backend, onStart: {}, onFinish: {})
+        } else {
+            SettingsWindowController.shared.show()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

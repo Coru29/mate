@@ -229,3 +229,28 @@
 "Bajar" = "Bajar";
 "Subir %@" = "Subir %@";
 "Bajar %@" = "Bajar %@";
+
+/* Updates */
+"%@ falló: %@" = "%@ falló: %@";
+"Abrir GitHub" = "Abrir GitHub";
+"Actualizar a Mate %@…" = "Actualizar a Mate %@…";
+"Actualizar y reiniciar" = "Actualizar y reiniciar";
+"Buscar ahora" = "Buscar ahora";
+"Buscar una versión nueva" = "Buscar una versión nueva";
+"El DMG no contiene Mate.app." = "El DMG no contiene Mate.app.";
+"La descarga falló." = "La descarga falló.";
+"La versión descargada no coincide con la publicada." = "La versión descargada no coincide con la publicada.";
+"La versión descargada no está firmada con el certificado de Mate (%@); no se instaló." = "La versión descargada no está firmada con el certificado de Mate (%@); no se instaló.";
+"Mate %@ es la versión más nueva." = "Mate %@ es la versión más nueva.";
+"Mate %@ está disponible" = "Mate %@ está disponible";
+"Más tarde" = "Más tarde";
+"No se encontró una versión publicada." = "No se encontró una versión publicada.";
+"No se pudo actualizar automáticamente" = "No se pudo actualizar automáticamente";
+"No se pudo buscar actualizaciones" = "No se pudo buscar actualizaciones";
+"No se pudo leer la firma de las aplicaciones." = "No se pudo leer la firma de las aplicaciones.";
+"No se pudo reemplazar %@: %@" = "No se pudo reemplazar %@: %@";
+"Novedades:" = "Novedades:";
+"Podés bajar la versión nueva desde GitHub." = "Podés bajar la versión nueva desde GitHub.";
+"Tenés la %@. Mate se descarga, se reemplaza y se vuelve a abrir; los permisos del llavero se mantienen." = "Tenés la %@. Mate se descarga, se reemplaza y se vuelve a abrir; los permisos del llavero se mantienen.";
+"Tenés la última versión" = "Tenés la última versión";
+"Ver en GitHub" = "Ver en GitHub";

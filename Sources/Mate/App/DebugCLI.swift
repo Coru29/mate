@@ -2,7 +2,7 @@ import AppKit
 import MateCore
 
 /// Command-line switches: `--fake` (scripted `FakeProvider`, in-memory vault, temp data dir unless `MATE_DATA_DIR`)
-/// and `--dump` (fetch once, print non-secret fields, exit). UI checks: `--open-panel` opens the panel after launch
+/// and `--dump` (fetch once, print non-secret fields, exit). `--debug-update` installs from a local test feed. UI checks: `--open-panel` opens the panel after launch
 /// (and closes it 10 s later unless the mouse is over it),
 /// `--demo-alert` drops a sample alert, `--snapshot-settings <dir>` / `--snapshot-welcome <dir>` write a PNG of every
 /// settings page / welcome step (see `DebugCLI+Windows.swift`). `MATE_DEFAULTS_SUITE` keeps a test run's preferences
@@ -15,6 +15,8 @@ enum DebugCLI {
     static var isFake: Bool { CommandLine.arguments.contains("--fake") }
     static var isDump: Bool { CommandLine.arguments.contains("--dump") }
     static var isIndex: Bool { CommandLine.arguments.contains("--index") }
+    /// `--debug-update`: installs the newest release of the `updateFeedURL` test feed (see `Updater`).
+    static var isDebugUpdate: Bool { CommandLine.arguments.contains("--debug-update") }
 
     /// The value after `flag`, if any.
     private static func value(after flag: String, offset: Int = 1) -> String? {
