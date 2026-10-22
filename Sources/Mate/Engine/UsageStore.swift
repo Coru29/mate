@@ -589,12 +589,13 @@ final class UsageStore: ObservableObject {
             return .failed(.error("keychain"))
         }
         guard let tokens = try? p.decodeCredentials(data) else { return .failed(.error("credentials")) }
-        // Never fetched with (nor attributed to this account) unless the blob is this account's.
-        if !p.agentOnly, !(await storeShadow(account.id, data: data, configDir: dir, p)) { return .skipped(.stale) }
+        // Expired first: no identity lookup with a token the provider would refuse while the agent idles.
         switch registry.refreshDecision(for: account.id, expiresAt: tokens.expiresAt, now: Date()) {
         case .stale: return .skipped(.stale)
         case .useAsIs, .refresh: break // `.refresh` never happens for an agent-owned account.
         }
+        // Never fetched with (nor attributed to this account) unless the blob is this account's.
+        if !p.agentOnly, !(await storeShadow(account.id, data: data, configDir: dir, p)) { return .skipped(.stale) }
         do {
             return .success(try await p.fetchUsage(account: account, tokens: tokens))
         } catch ProviderError.unauthorized {
