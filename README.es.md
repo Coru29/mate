@@ -8,7 +8,7 @@
   Una app gratis y open source para macOS que muestra <b>cuánto te queda de los límites de uso de tus agentes de IA</b>, al lado del notch.
 </p>
 
-<p align="center"><a href="https://mate-mac.app"><b>mate-mac.app</b></a> · <a href="README.md">Read in English</a></p>
+<p align="center"><a href="https://mate-mac.vercel.app"><b>mate-mac.vercel.app</b></a> · <a href="README.md">Read in English</a></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-blue" alt="Licencia MIT"></a>
