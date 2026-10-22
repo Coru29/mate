@@ -36,11 +36,19 @@ public func pace(for window: LimitWindow, samples: [Sample], now: Date) -> PaceS
     return exhaustion < resetsAt ? .runsOut(at: exhaustion) : .ahead
 }
 
-/// The window closest to trouble: highest `usedPercent / max(expectedPercent, 1)`.
-/// Windows without duration or reset date rank by `usedPercent` alone.
+/// The window closest to trouble.
+/// 1. Any window at 100 % or more wins (ties: earliest reset, no reset last).
+/// 2. Otherwise timed windows score `usedPercent / max(expectedPercent, 1)` and
+///    untimed ones `usedPercent / 100`, so both sit on a comparable scale.
 public func tightestWindow(_ windows: [LimitWindow], now: Date) -> LimitWindow? {
+    let reached = windows.filter { $0.usedPercent >= 100 }
+    if !reached.isEmpty {
+        return reached.min {
+            ($0.resetsAt ?? .distantFuture) < ($1.resetsAt ?? .distantFuture)
+        }
+    }
     func score(_ w: LimitWindow) -> Double {
-        guard let expected = expectedPercent(w, now: now) else { return w.usedPercent }
+        guard let expected = expectedPercent(w, now: now) else { return w.usedPercent / 100 }
         return w.usedPercent / max(expected, 1)
     }
     return windows.max { score($0) < score($1) }

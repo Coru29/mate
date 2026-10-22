@@ -73,3 +73,19 @@ private func session(used: Double, resetsIn: TimeInterval = 3 * hour) -> LimitWi
     let b = LimitWindow(kind: .premiumRequests, usedPercent: 20, resetsAt: nil, duration: nil, detail: nil)
     #expect(tightestWindow([b, a], now: now)?.kind == .monthlyBudget)
 }
+
+@Test func untimedBudgetDoesNotOutrankHotSession() {
+    let budget = LimitWindow(kind: .monthlyBudget, usedPercent: 40, resetsAt: nil, duration: nil, detail: nil)
+    let sess = LimitWindow(kind: .session, usedPercent: 30, resetsAt: now.addingTimeInterval(4.5 * hour),
+                           duration: 5 * hour, detail: nil)
+    #expect(tightestWindow([budget, sess], now: now)?.kind == .session)
+}
+
+@Test func limitReachedAlwaysTightest() {
+    let sess = LimitWindow(kind: .session, usedPercent: 100, resetsAt: now.addingTimeInterval(hour),
+                           duration: 5 * hour, detail: nil)
+    // Weekly: 90 % used at 1 % elapsed, a far higher ratio but still below the limit.
+    let week = LimitWindow(kind: .weekly, usedPercent: 90, resetsAt: now.addingTimeInterval(0.99 * 7 * 24 * hour),
+                           duration: 7 * 24 * hour, detail: nil)
+    #expect(tightestWindow([week, sess], now: now)?.kind == .session)
+}
