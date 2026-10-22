@@ -19,7 +19,12 @@ public enum CopilotUsage {
             throw ParseError.malformed("no premium quota")
         }
         var detail: String?
-        if let e = entitlement, let r = remaining { detail = "\(Int(e - r)) de \(Int(e))" }
+        if let e = entitlement, let r = remaining {
+            guard let used = Int(exactly: (e - r).rounded()), let total = Int(exactly: e.rounded()) else {
+                throw ParseError.malformed("entitlement out of range")
+            }
+            detail = "\(used) de \(total)"
+        }
         return [LimitWindow(kind: .premiumRequests, usedPercent: percent,
                             resetsAt: try J.dateValue(root, "quota_reset_date"), duration: nil, detail: detail)]
     }

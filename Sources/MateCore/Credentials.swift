@@ -50,7 +50,7 @@ public enum ClaudeCredentials {
 
     /// Writes the tokens into `original` (when given and valid), leaving every other key untouched.
     public static func encode(_ t: OAuthTokens, preserving original: Data?) throws -> Data {
-        var root = original.flatMap { try? J.object($0) } ?? [:]
+        var root = try original.map { try J.object($0) } ?? [:]
         var o = (root["claudeAiOauth"] as? [String: Any]) ?? [:]
         o["accessToken"] = t.accessToken
         if let r = t.refreshToken { o["refreshToken"] = r }
@@ -83,14 +83,14 @@ public enum CodexCredentials {
                            expiresAt: JWT.expiry(access), extra: extra)
     }
 
-    public static func encode(_ t: OAuthTokens, preserving original: Data?) throws -> Data {
-        var root = original.flatMap { try? J.object($0) } ?? [:]
+    public static func encode(_ t: OAuthTokens, preserving original: Data?, now: Date = Date()) throws -> Data {
+        var root = try original.map { try J.object($0) } ?? [:]
         var o = (root["tokens"] as? [String: Any]) ?? [:]
         o["access_token"] = t.accessToken
         if let r = t.refreshToken { o["refresh_token"] = r }
         for k in ["id_token", "account_id"] { if let v = t.extra[k] { o[k] = v } }
         root["tokens"] = o
-        root["last_refresh"] = ISO8601DateFormatter().string(from: Date())
+        root["last_refresh"] = ISO8601DateFormatter().string(from: now)
         return try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
     }
 }
@@ -114,9 +114,9 @@ public enum CopilotCredentials {
     public static func decode(_ data: Data) throws -> OAuthTokens {
         let root = try J.object(data)
         for key in root.keys.sorted() {
-            guard let entry = root[key] as? [String: Any], let token = try J.string(entry, "oauth_token") else { continue }
+            guard let entry = root[key] as? [String: Any], let token = try? J.string(entry, "oauth_token") else { continue }
             var extra: [String: String] = [:]
-            if let u = try J.string(entry, "user") { extra["user"] = u }
+            if let u = try? J.string(entry, "user") { extra["user"] = u }
             return OAuthTokens(accessToken: token, extra: extra)
         }
         throw ParseError.malformed("no oauth_token entry")

@@ -90,3 +90,23 @@ func fixture(_ name: String) throws -> Data {
         #expect(throws: (any Error).self) { try CopilotCredentials.decode(d) }
     }
 }
+
+@Test func encodeRejectsCorruptOriginal() throws {
+    let t = OAuthTokens(accessToken: "a")
+    let corrupt = Data("{\"claudeAiOauth\":".utf8)
+    #expect(throws: (any Error).self) { try ClaudeCredentials.encode(t, preserving: corrupt) }
+    #expect(throws: (any Error).self) { try CodexCredentials.encode(t, preserving: corrupt) }
+    _ = try ClaudeCredentials.encode(t, preserving: nil)
+}
+
+@Test func codexEncodeStampsGivenNow() throws {
+    let out = try CodexCredentials.encode(OAuthTokens(accessToken: "a"), preserving: nil,
+                                          now: Date(timeIntervalSince1970: 1_792_670_400))
+    let root = try #require(JSONSerialization.jsonObject(with: out) as? [String: Any])
+    #expect(root["last_refresh"] as? String == "2026-10-22T12:00:00Z")
+}
+
+@Test func copilotDecodeSkipsBadEntry() throws {
+    let json = #"{"a":{"oauth_token":5},"b":{"oauth_token":"gho_OK"}}"#
+    #expect(try CopilotCredentials.decode(Data(json.utf8)).accessToken == "gho_OK")
+}

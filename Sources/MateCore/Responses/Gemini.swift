@@ -9,7 +9,7 @@ public enum GeminiQuota {
         var out: [LimitWindow] = []
         for case let b as [String: Any] in buckets {
             guard let model = try J.string(b, "modelId"), let remaining = try J.double(b, "remainingFraction") else { continue }
-            out.append(LimitWindow(kind: .dailyModel(model), usedPercent: (1 - remaining) * 100,
+            out.append(LimitWindow(kind: .dailyModel(model), usedPercent: min(100, max(0, (1 - remaining) * 100)),
                                    resetsAt: try J.dateValue(b, "resetTime"), duration: 86_400))
         }
         return out

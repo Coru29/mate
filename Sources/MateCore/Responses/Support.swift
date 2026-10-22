@@ -71,7 +71,7 @@ enum J {
 
     /// "12,40" style amount with comma decimals; whole numbers drop the fraction when `trim` is set.
     static func amount(_ v: Double, trim: Bool = false) -> String {
-        if trim, v == v.rounded() { return String(Int(v)) }
+        if trim, v == v.rounded(), let i = Int(exactly: v) { return String(i) }
         return String(format: "%.2f", v).replacingOccurrences(of: ".", with: ",")
     }
 }

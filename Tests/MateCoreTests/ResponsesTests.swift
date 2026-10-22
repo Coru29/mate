@@ -129,3 +129,18 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
     ]
     for (_, f) in fns { #expect(throws: (any Error).self) { try f() } }
 }
+
+@Test func hugeNumbersThrowNotTrap() {
+    let copilot = #"{"quota_snapshots":{"premium_interactions":{"entitlement":1e30,"remaining":5,"percent_remaining":40}}}"#
+    #expect(throws: (any Error).self) { try CopilotUsage.windows(from: Data(copilot.utf8), now: now) }
+    let claude = #"{"five_hour":{"utilization":1e300},"extra_usage":{"used_credits":1e300,"monthly_limit":1e30}}"#
+    _ = try? ClaudeUsage.windows(from: Data(claude.utf8), now: now)
+    let grok = #"{"spend":{"val":"1e300"}}"#
+    _ = try? GrokSpend.windows(from: Data(grok.utf8), budget: 1e30, now: now)
+}
+
+@Test func geminiPercentIsClamped() throws {
+    let json = #"{"buckets":[{"modelId":"m","remainingFraction":1.5},{"modelId":"n","remainingFraction":-1}]}"#
+    let w = try GeminiQuota.windows(from: Data(json.utf8), now: now)
+    #expect(w.map(\.usedPercent) == [0, 100])
+}
