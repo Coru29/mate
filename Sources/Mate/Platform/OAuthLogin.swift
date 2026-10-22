@@ -73,7 +73,7 @@ enum OAuthLogin {
                     throw LoginError.denied("missing_account_id")
                 }
                 callback.respond(true)
-                return (tokens, identity.accountID, identity.email)
+                return (tokens, identity.identity, identity.email)
             } catch {
                 callback.respond(false)
                 throw error

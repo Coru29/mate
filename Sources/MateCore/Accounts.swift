@@ -190,6 +190,14 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
         return agentOnly ? [] : [.dropMateCopy(accountID: id)]
     }
 
+    /// Gives an account a new id and identity in place (name, color, owner and status kept).
+    public mutating func rename(_ r: CodexAccountMigration.Rename) {
+        guard let i = accounts.firstIndex(where: { $0.id == r.from }), !accounts.contains(where: { $0.id == r.to }) else { return }
+        accounts[i].id = r.to
+        if accounts[i].name == accounts[i].identity { accounts[i].name = r.identity }
+        accounts[i].identity = r.identity
+    }
+
     public func canRefresh(_ id: String) -> Bool {
         accounts.first { $0.id == id }?.owner == .mate
     }

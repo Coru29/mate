@@ -346,6 +346,7 @@ final class UsageStore: ObservableObject {
         repeat {
             reconcileAgain.remove(p.id)
             let scan = await p.observeSessions()
+            if p.id == .codex { migrateCodexIDs(scan.sessions) }
             let before = Dictionary(uniqueKeysWithValues: registry.accounts.map { ($0.id, ($0.owner, $0.agentConfigDir)) })
             let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs,
                                              sourceDirs: Set(configDirs[p.id.rawValue] ?? []), agentOnly: p.agentOnly)
@@ -377,6 +378,53 @@ final class UsageStore: ObservableObject {
         for waiter in reconcileWaiters.removeValue(forKey: p.id) ?? [] { waiter.resume() }
         if p.id == .cursor && activationObserver != nil { frontmostChanged(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) }
         scheduleFetches()
+    }
+
+    /// Renames old Codex accounts (`codex:<accountId>`) to their user's new id (`codex:<accountId>:<userId>`) once
+    /// that identity is seen: in the agent's session or in Mate's own copy of a Mate-owned account. Everything keyed
+    /// by the id moves with it: Mate's copy, snapshot, samples, switch history, alert state and token slices.
+    private func migrateCodexIDs(_ sessions: [ObservedSession]) {
+        var identities = sessions.filter { $0.provider == .codex }.map(\.identity)
+        for a in registry.accounts where a.provider == .codex && a.owner == .mate
+            && CodexIdentity.legacyIdentity(of: a.identity) == nil {
+            if let data = try? vault.read(.codex, accountID: a.id), let s = try? CodexAuthFile.session(from: data) {
+                identities.append(s.identity)
+            }
+        }
+        let renames = CodexAccountMigration.renames(newIdentities: identities, existingIDs: Set(registry.accounts.map(\.id)))
+        guard !renames.isEmpty else { return }
+        for r in renames {
+            // Mate's copy first: if it cannot move, the account keeps its old id (and its copy) for now.
+            do {
+                if let data = try vault.read(.codex, accountID: r.from) {
+                    try vault.write(.codex, accountID: r.to, data: data)
+                    try vault.delete(.codex, accountID: r.from)
+                }
+            } catch {
+                Log.error("\(r.from): could not move Mate's copy to \(r.to) (\(error)); not renamed yet")
+                continue
+            }
+            registry.rename(r)
+            if var snap = snapshots.removeValue(forKey: r.from) {
+                snap.accountID = r.to
+                snapshots[r.to] = snap
+            }
+            for key in samplesByKey.keys where key.hasPrefix(r.from + "|") && !key.dropFirst(r.from.count + 1).contains("|") {
+                samplesByKey[r.to + "|" + key.dropFirst(r.from.count + 1)] = samplesByKey.removeValue(forKey: key)
+            }
+            switchHistory.renameAccount(from: r.from, to: r.to)
+            alertEngine.renameAccount(from: r.from, to: r.to)
+            aggregates.renameAccount(from: r.from, to: r.to)
+            fetchState[r.to] = fetchState.removeValue(forKey: r.from)
+            if selectedAccountID == r.from { selectedAccountID = r.to }
+            Log.info("\(r.from): renamed to \(r.to)")
+        }
+        commitRegistry()
+        persistence.save("snapshots") { [unowned self] in snapshots }
+        persistence.save("samples") { [unowned self] in samplesByKey }
+        persistence.save("switchHistory") { [unowned self] in switchHistory }
+        persistence.save("alerts") { [unowned self] in alertEngine }
+        persistence.save("aggregates") { [unowned self] in aggregates }
     }
 
     private func recordSwitches(_ sessions: [ObservedSession], provider id: ProviderID) {

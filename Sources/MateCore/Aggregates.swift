@@ -158,6 +158,17 @@ public struct UsageAggregates: Codable, Sendable {
         }
     }
 
+    /// Moves a renamed account's per-account slices to its new id.
+    public mutating func renameAccount(from old: String, to new: String) {
+        for i in buckets.indices {
+            guard let models = buckets[i].accountModels.removeValue(forKey: old) else { continue }
+            for (m, t) in models {
+                buckets[i].accountModels[new, default: [:]][m, default: ModelTotals()].tokens += t.tokens
+                buckets[i].accountModels[new, default: [:]][m, default: ModelTotals()].cost += t.cost
+            }
+        }
+    }
+
     static func provider(ofAccount id: String) -> ProviderID? {
         id.split(separator: ":", maxSplits: 1).first.flatMap { ProviderID(rawValue: String($0)) }
     }

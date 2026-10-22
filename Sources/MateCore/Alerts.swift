@@ -81,6 +81,15 @@ public struct AlertEngine: Codable, Sendable {
         }
     }
 
+    /// Moves a renamed account's state to its new id, so its crossed thresholds do not fire again.
+    public mutating func renameAccount(from old: String, to new: String) {
+        let prefix = old + "|"
+        for (key, entry) in entries where key.hasPrefix(prefix) && !key.dropFirst(prefix.count).contains("|") {
+            entries[key] = nil
+            entries[new + "|" + key.dropFirst(prefix.count)] = entry
+        }
+    }
+
     private static func periodChanged(_ entry: Entry, _ window: LimitWindow) -> Bool {
         if let old = entry.resetsAt, let new = window.resetsAt {
             return new.timeIntervalSince(old) > periodShift

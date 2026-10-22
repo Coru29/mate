@@ -107,16 +107,26 @@ public enum CodexCredentials {
     }
 }
 
-/// The ChatGPT identity in a Codex `id_token`: `https://api.openai.com/auth.chatgpt_account_id`, and the email
-/// from `email` (or `https://api.openai.com/profile.email`).
+/// The ChatGPT identity in a Codex `id_token`: the workspace (`https://api.openai.com/auth.chatgpt_account_id`,
+/// what the usage request names) and the user in it (`chatgpt_user_id`, else `sub`), so two users of one Team
+/// workspace are two accounts. The identity is "<accountID>:<userID>" (just the account id when the token names no
+/// user); the email comes from `email` (or `https://api.openai.com/profile.email`).
 public enum CodexIdentity {
-    public static func from(idToken: String) -> (accountID: String, email: String?)? {
+    public static func from(idToken: String) -> (accountID: String, identity: String, email: String?)? {
         guard let claims = JWT.claims(idToken),
               let auth = claims["https://api.openai.com/auth"] as? [String: Any],
               let account = auth["chatgpt_account_id"] as? String, !account.isEmpty else { return nil }
         let email = claims["email"] as? String
             ?? (claims["https://api.openai.com/profile"] as? [String: Any])?["email"] as? String
-        return (account, email)
+        let user = [auth["chatgpt_user_id"] as? String, claims["sub"] as? String].compactMap { $0 }.first { !$0.isEmpty }
+        return (account, user.map { "\(account):\($0)" } ?? account, email)
+    }
+
+    /// The identity Mate used before the user part existed (the workspace id alone), or nil when `identity` has no
+    /// user part.
+    public static func legacyIdentity(of identity: String) -> String? {
+        guard let colon = identity.firstIndex(of: ":") else { return nil }
+        return String(identity[..<colon])
     }
 }
 
@@ -128,7 +138,7 @@ public enum CodexAuthFile {
         let root = try J.object(data)
         guard let t = try J.dict(root, "tokens"), try J.string(t, "access_token") != nil else { return nil }
         if let id = try J.string(t, "id_token"), let identity = CodexIdentity.from(idToken: id) {
-            return (identity.accountID, identity.email)
+            return (identity.identity, identity.email)
         }
         guard let account = try J.string(t, "account_id"), !account.isEmpty else {
             throw ParseError.malformed("tokens without an account id")

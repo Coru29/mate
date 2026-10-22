@@ -20,6 +20,10 @@ public struct SwitchHistory: Codable, Equatable, Sendable {
         entries.append(Entry(configDir: configDir, accountID: accountID, from: at))
     }
 
+    public mutating func renameAccount(from old: String, to new: String) {
+        for i in entries.indices where entries[i].accountID == old { entries[i].accountID = new }
+    }
+
     /// The account that owned `configDir` at `at`. Before the first record of the dir, the first recorded account
     /// (the best guess for history older than Mate's own bookkeeping). Nil when the dir was never recorded.
     public func account(forConfigDir dir: String, at: Date) -> String? {

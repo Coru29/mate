@@ -107,6 +107,19 @@ private func query(_ url: URL) -> [String: String] {
     #expect(CodexIdentity.from(idToken: "nope") == nil)
 }
 
+/// Two users of one Team workspace share the ChatGPT account id: the user id keeps them apart.
+@Test func codexIdentityIncludesTheUser() {
+    let both = jwt(["sub": "auth0|s", "https://api.openai.com/auth": ["chatgpt_account_id": "acct-1", "chatgpt_user_id": "user-1"]])
+    #expect(CodexIdentity.from(idToken: both)?.identity == "acct-1:user-1")
+    #expect(CodexIdentity.from(idToken: both)?.accountID == "acct-1")
+    let subOnly = jwt(["sub": "auth0|s", "https://api.openai.com/auth": ["chatgpt_account_id": "acct-1"]])
+    #expect(CodexIdentity.from(idToken: subOnly)?.identity == "acct-1:auth0|s")
+    let neither = jwt(["https://api.openai.com/auth": ["chatgpt_account_id": "acct-1"]])
+    #expect(CodexIdentity.from(idToken: neither)?.identity == "acct-1")
+    #expect(CodexIdentity.legacyIdentity(of: "acct-1:user-1") == "acct-1")
+    #expect(CodexIdentity.legacyIdentity(of: "acct-1") == nil)
+}
+
 @Test func codexAuthFileSession() throws {
     let s = try #require(try CodexAuthFile.session(from: fixture("codex-auth.json")))
     #expect(s.identity == "acct-TEST" && s.email == "a@example.com")
