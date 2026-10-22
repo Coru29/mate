@@ -1,10 +1,15 @@
 import SwiftUI
 import MateCore
 
-/// The hover panel. Lives in an `NSHostingView` that exists only while the panel is open; the black shape behind
-/// it is drawn by the window's root view.
+/// One page of the hover panel: one account's header, status, meters and live row. Lives in an `NSHostingView`
+/// that exists only while the panel is open (two during a slide between accounts, see `PanelPager`); the black shape
+/// behind it is drawn by the window's root view. The dots are `PanelDots`, below the page.
 struct PanelView: View {
     @ObservedObject var store: UsageStore
+    /// The account this page shows (pinned, so the outgoing page keeps its account while it slides away).
+    let accountID: String?
+    /// The dots sit below the page: no bottom margin of its own then.
+    let hasDots: Bool
     /// Height of the notch strip at the top of the panel (content starts below it).
     let topInset: CGFloat
     /// The welcome guide's "Mate vive acá" line, on the first opening only.
@@ -13,10 +18,9 @@ struct PanelView: View {
 
     var body: some View {
         let now = Date()
-        let accounts = store.notchAccounts
         VStack(alignment: .leading, spacing: 14) {
             if hint { hintRow }
-            if let account = store.panelAccount {
+            if let account = store.notchAccounts.first(where: { $0.id == accountID }) {
                 header(account)
                 status(account, now: now)
                 if let snapshot = store.snapshots[account.id], !snapshot.windows.isEmpty {
@@ -35,11 +39,10 @@ struct PanelView: View {
                     .foregroundStyle(NotchPalette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if accounts.count > 1 { dots(accounts) }
         }
         .padding(.horizontal, 20)
         .padding(.top, topInset + 10)
-        .padding(.bottom, accounts.count > 1 ? 10 : 18)
+        .padding(.bottom, hasDots ? 0 : 18)
         .frame(width: NotchController.panelWidth, alignment: .topLeading)
         .environment(\.colorScheme, .dark)
     }
@@ -195,20 +198,29 @@ struct PanelView: View {
         let tool = provider == .claude ? "Claude Code" : provider.displayName
         return Text("Proyecto, tiempo y tokens de la sesión de \(tool) en curso (incluye caché)")
     }
+}
 
-    private func dots(_ accounts: [Account]) -> some View {
+/// One dot per account under the panel's pages; the selected one is a wider, brighter capsule, and the change
+/// springs like the page slide. A click selects the account (the controller slides the page).
+struct PanelDots: View {
+    @ObservedObject var store: UsageStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static let height: CGFloat = 46
+
+    var body: some View {
         let selected = store.panelAccount?.id
-        return HStack(spacing: 0) {
+        HStack(spacing: 0) {
             Spacer(minLength: 0)
-            ForEach(accounts) { a in
+            ForEach(store.notchAccounts) { a in
                 Button {
                     store.selectedAccountID = a.id
                 } label: {
-                    Circle()
+                    Capsule()
                         .fill(a.id == selected ? NotchPalette.onNotch : Color.white.opacity(0.28))
-                        .frame(width: 7, height: 7)
-                        .scaleEffect(a.id == selected ? 1.15 : 1)
-                        .frame(width: 22, height: 22)
+                        .frame(width: a.id == selected ? 16 : 7, height: 7)
+                        .frame(height: 22)
+                        .padding(.horizontal, 7.5)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -216,6 +228,13 @@ struct PanelView: View {
             }
             Spacer(minLength: 0)
         }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.86), value: selected)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+        .frame(width: NotchController.panelWidth, height: Self.height)
+        // Opaque like the panel: while the panel grows, the incoming page's lower rows pass under the dots.
+        .background(Color.black)
+        .environment(\.colorScheme, .dark)
     }
 }
 

@@ -27,7 +27,7 @@ final class NotchController {
     private enum Mode { case closed, open, alert }
 
     let store: UsageStore
-    private let window = NotchWindow()
+    let window = NotchWindow()
     let root = NotchShapeView()
     private let pill = PillView()
     private let banner = AlertBanner()
@@ -60,8 +60,9 @@ final class NotchController {
     /// Bumped by every shape transition, so a superseded animation's completion does nothing.
     private var generation = 0
 
-    private var hosting: PanelHostingView?
-    private var panelView: PanelContainerView?
+    private var panelView: PanelPager?
+    /// The step of the swipe that changed the selection, so the slide goes the way the fingers went.
+    private var pendingStep: Int?
     private var alertView: NSView?
     /// Panel or alert views fading out while the shape closes; removed when the shape is at rest, so nothing is
     /// re-laid out mid-animation.
@@ -71,9 +72,7 @@ final class NotchController {
     private var alertTimer: Timer?
     private var recheckTimer: Timer?
     private var monitors: [Any] = []
-    private var scrollAccumulated: CGFloat = 0
-    /// The current swipe already switched accounts.
-    private var scrollStepped = false
+    private var swipe = SwipeStepper(threshold: scrollThreshold)
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var storeChanges: AnyCancellable?
     private var refreshQueued = false
@@ -135,10 +134,11 @@ final class NotchController {
         cancel(&closeTimer)
         if mode == .alert { removeAlertView() }
         closing = false
-        let host = PanelHostingView(rootView: makePanel())
-        hosting = host
-        panelRect = NotchLayout.panelRect(notch: notch, contentHeight: host.fittingSize.height, screen: info)
-        let container = PanelContainerView(content: host)
+        // The controller lives as long as the app.
+        let container = PanelPager(store: store, accountID: store.panelAccount?.id) { [unowned self] id, hasDots in
+            self.makePanel(accountID: id, hasDots: hasDots)
+        }
+        panelRect = NotchLayout.panelRect(notch: notch, contentHeight: container.fittingHeight, screen: info)
         panelView = container
         root.content.addSubview(container, positioned: .below, relativeTo: pill)
         mode = .open
@@ -168,7 +168,6 @@ final class NotchController {
         showHint = false
         store.panelDidClose()
         Log.info("panel closed")
-        hosting = nil
         if let container = panelView {
             panelView = nil
             retire(container)
@@ -225,7 +224,6 @@ final class NotchController {
             cancel(&closeTimer)
             panelView?.removeFromSuperview()
             panelView = nil
-            hosting = nil
             store.panelDidClose()
         }
         if mode == .alert { removeAlertView() }
@@ -454,18 +452,43 @@ final class NotchController {
         }
     }
 
-    /// The selected account or its data changed while open: follow the content's height.
+    /// The selected account or its data changed while open: slide to the new account, or redraw the page, and
+    /// follow the content's height with the black shape (on the page spring, top pinned).
     private func resizePanel() {
-        guard let host = hosting, let info = screenInfo else { return }
-        host.rootView = makePanel()
-        let target = NotchLayout.panelRect(notch: notch, contentHeight: host.fittingSize.height, screen: info)
+        guard let pager = panelView, let info = screenInfo else { return }
+        let id = store.panelAccount?.id
+        if id != pager.accountID {
+            let forward = pendingStep.map { $0 > 0 } ?? isForward(from: pager.accountID, to: id)
+            pager.slide(to: id, forward: forward)
+        } else {
+            pager.refresh()
+        }
+        pendingStep = nil
+        let target = NotchLayout.panelRect(notch: notch, contentHeight: pager.fittingHeight, screen: info)
         guard abs(target.height - panelRect.height) > 0.5 else { return }
         panelRect = target
-        transition(to: target, radius: Self.openRadius)
+        transition(to: target, radius: Self.openRadius, spring: .page)
     }
 
-    private func makePanel() -> PanelView {
-        PanelView(store: store, topInset: notch.height, hint: showHint) { [weak self] in self?.onOpenUsage() }
+    /// A dot click or any other change of selection: forward when the new account comes later in the dots.
+    private func isForward(from old: String?, to new: String?) -> Bool {
+        let ids = store.notchAccounts.map(\.id)
+        guard let a = old.flatMap({ ids.firstIndex(of: $0) }), let b = new.flatMap({ ids.firstIndex(of: $0) }) else {
+            return true
+        }
+        return b > a
+    }
+
+    /// `--snapshot-anim`: one swipe step, as from the trackpad.
+    func debugSwipe(step: Int) {
+        pendingStep = step
+        store.selectAccount(step: step)
+    }
+
+    private func makePanel(accountID: String?, hasDots: Bool) -> PanelView {
+        PanelView(store: store, accountID: accountID, hasDots: hasDots, topInset: notch.height, hint: showHint) {
+            [weak self] in self?.onOpenUsage()
+        }
     }
 
     // MARK: Alerts
@@ -580,32 +603,37 @@ final class NotchController {
         monitors.removeAll()
     }
 
-    /// Account switching by a horizontal two-finger swipe on the trackpad only: one account per gesture, however
-    /// long. Vertical scrolling, mouse wheels and momentum are ignored (the panel was too easy to flip by accident).
-    /// Returns whether the event was used.
+    /// Account switching by a horizontal two-finger swipe on the trackpad only: exactly one account per physical
+    /// swipe (`SwipeStepper`), fingers to the left for the next one. Vertical scrolling, mouse wheels and momentum
+    /// are ignored (the panel was too easy to flip by accident). Returns whether the event was used.
     private func scrolled(_ event: NSEvent) -> Bool {
         guard event.window === window else { return false }
-        if !event.momentumPhase.isEmpty { return true }
-        // Trackpad gestures have precise deltas and a phase; a mouse wheel has neither.
-        guard event.hasPreciseScrollingDeltas, !event.phase.isEmpty else { return true }
-        if event.phase == .began { resetSwipe() }
-        // The end of a swipe resets too: a swipe that began outside the panel must not leave stale state.
-        if event.phase == .ended || event.phase == .cancelled {
-            resetSwipe()
-            return true
-        }
-        guard !scrollStepped, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return true }
-        scrollAccumulated -= event.scrollingDeltaX
-        if abs(scrollAccumulated) >= Self.scrollThreshold {
-            store.selectAccount(step: scrollAccumulated < 0 ? 1 : -1)
-            scrollStepped = true
-        }
+        // Trackpad gestures have precise deltas; a mouse wheel does not (and has no phase either).
+        guard event.hasPreciseScrollingDeltas else { return true }
+        // Content follows the fingers whatever the natural-scrolling setting (the sign lives in SwipeStepper).
+        guard let step = swipe.feed(phase: Self.swipePhase(event.phase), momentum: !event.momentumPhase.isEmpty,
+                                    deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
+                                    invertedFromDevice: event.isDirectionInvertedFromDevice) else { return true }
+        // No wrap-around: past the last account a swipe does nothing (wrapping read as skipping accounts).
+        let ids = store.notchAccounts.map(\.id)
+        guard let current = store.panelAccount.flatMap({ ids.firstIndex(of: $0.id) }),
+              ids.indices.contains(current + step) else { return true }
+        pendingStep = step
+        store.selectedAccountID = ids[current + step]
         return true
     }
 
+    private static func swipePhase(_ phase: NSEvent.Phase) -> SwipeStepper.Phase {
+        if phase.contains(.began) { return .began }
+        if phase.contains(.changed) { return .changed }
+        if phase.contains(.ended) { return .ended }
+        if phase.contains(.cancelled) { return .cancelled }
+        if phase.contains(.mayBegin) { return .mayBegin }
+        return .none
+    }
+
     private func resetSwipe() {
-        scrollAccumulated = 0
-        scrollStepped = false
+        swipe.reset()
     }
 
     // MARK: Notifications

@@ -1,14 +1,21 @@
 import AppKit
 
-/// `--snapshot-anim <dir>`: opens the panel 1.5 s after launch and closes it at 3.5 s, rendering what is on screen
-/// (the layers' presentation, mid-animation) to PNGs: the open at a few moments, the close every 16 ms. At 5 s it
-/// starts hiding the pill and cancels the hide 40 ms later (pill-*.png: the pill must end visible).
+/// `--snapshot-anim <dir>`: opens the panel 1.5 s after launch, swipes to the next account at 2.6 s and closes it
+/// at 4 s, rendering what is on screen (the layers' presentation, mid-animation) to PNGs: the open at a few moments,
+/// the slide every 32 ms, the close every 16 ms. At 5.5 s it starts hiding the pill and cancels the hide 40 ms later
+/// (pill-*.png: the pill must end visible).
 /// `--trace-anim <dir>`: the same open and close without PNGs; a display link (only while each animation runs)
 /// writes one line per frame to open-trace.txt / close-trace.txt: time since start, gap since the previous frame,
 /// the window frame and the body's on-screen bounds. In-process, no screen recording.
 extension NotchController {
     func scheduleAnimationSnapshots() {
         let args = CommandLine.arguments
+        // These checks render the layer tree in-process, so the window itself stays invisible and lets every click
+        // through: nothing shows on the user's screen while they run.
+        if args.contains("--snapshot-anim") || args.contains("--trace-anim") {
+            window.alphaValue = 0
+            window.ignoresMouseEvents = true
+        }
         if let i = args.firstIndex(of: "--trace-anim"), i + 1 < args.count {
             let dir = args[i + 1]
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -33,14 +40,21 @@ extension NotchController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/open-\(Int(t * 1000))ms.png") }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+            self?.debugSwipe(step: 1)
+            for t in (0...15).map({ Double($0) * 0.032 }) + [0.8] {
+                let name = String(format: "slide-%03dms.png", Int((t * 1000).rounded()))
+                DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/\(name)") }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
             self?.closePanel()
             for t in closeFrames {
                 let name = String(format: "close-%03dms.png", Int((t * 1000).rounded()))
                 DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/\(name)") }
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) { [weak self] in
             self?.debugSetPillHidden(true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { self?.debugSetPillHidden(false) }
             for t in [0.02, 0.1, 0.3, 1.0] {

@@ -56,18 +56,3 @@ enum NotchMotion {
         view.layer?.removeAnimation(forKey: "fadeOut")
     }
 }
-
-/// A plain, unflipped, layer-backed holder for the panel's hosting view, so `NotchMotion.reveal` can scale it
-/// around its top center.
-final class PanelContainerView: NSView {
-    init(content: NSView) {
-        super.init(frame: .zero)
-        wantsLayer = true
-        content.autoresizingMask = [.width, .height]
-        addSubview(content)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var isFlipped: Bool { false }
-}

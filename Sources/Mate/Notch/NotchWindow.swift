@@ -118,6 +118,17 @@ final class NotchShapeView: NSView {
 
         static let open = Spring(response: 0.42, damping: 0.82, maxDuration: 0.7)
         static let close = Spring(response: 0.22, damping: 1, maxDuration: 0.26)
+        /// Paging between accounts in the open panel (the slide, the dots and the panel's height).
+        static let page = Spring(response: 0.38, damping: 0.86, maxDuration: 0.6)
+
+        func animation(keyPath: String) -> CASpringAnimation {
+            let a = CASpringAnimation(keyPath: keyPath)
+            a.mass = 1
+            a.stiffness = pow(2 * .pi / response, 2)
+            a.damping = 4 * .pi * damping / response
+            a.duration = min(a.settlingDuration, maxDuration)
+            return a
+        }
     }
 
     private func layers(_ part: Part) -> [CAShapeLayer] {
@@ -149,13 +160,9 @@ final class NotchShapeView: NSView {
                  completion: @escaping () -> Void) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let spring = CASpringAnimation(keyPath: "path")
+        let spring = s.animation(keyPath: "path")
         spring.fromValue = from
         spring.toValue = to
-        spring.mass = 1
-        spring.stiffness = pow(2 * .pi / s.response, 2)
-        spring.damping = 4 * .pi * s.damping / s.response
-        spring.duration = min(spring.settlingDuration, s.maxDuration)
         if delay > 0 {
             spring.beginTime = CACurrentMediaTime() + delay
             spring.fillMode = .backwards
