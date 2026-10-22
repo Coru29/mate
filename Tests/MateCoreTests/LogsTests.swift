@@ -46,7 +46,7 @@ private func strings(_ lines: [Data]) -> [String] { lines.map { String(decoding:
     try FileManager.default.removeItem(at: url)
     try Data("bbbbbbbb\ncc\n".utf8).write(to: url)
     var cursor = first.cursor
-    cursor.inode = first.cursor.inode &+ 1   // a rewritten file may reuse the inode; force the change
+    cursor.inode = first.cursor.inode &+ 1_000_000   // the new file may reuse or follow the old inode; fake a different one
     let second = try IncrementalReader.read(url: url, cursor: cursor)
     #expect(strings(second.lines) == ["bbbbbbbb", "cc"])
 }
