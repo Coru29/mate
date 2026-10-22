@@ -1,0 +1,2 @@
+/* English translation of Mate. The keys are the Spanish text in the code (Spanish is the source
+   language). scripts/check-localization.sh fails when a text in the code has no line here. */
