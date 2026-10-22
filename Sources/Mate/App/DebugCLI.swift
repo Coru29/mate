@@ -1,13 +1,63 @@
-import Foundation
+import AppKit
 import MateCore
 
 /// Command-line switches: `--fake` (scripted `FakeProvider`, in-memory vault, temp data dir unless `MATE_DATA_DIR`)
-/// and `--dump` (fetch once, print non-secret fields, exit).
+/// and `--dump` (fetch once, print non-secret fields, exit). UI checks: `--open-panel` opens the panel after launch
+/// (and closes it 10 s later unless the mouse is over it),
+/// `--demo-alert` drops a sample alert.
 @MainActor
 enum DebugCLI {
     static var isFake: Bool { CommandLine.arguments.contains("--fake") }
     static var isDump: Bool { CommandLine.arguments.contains("--dump") }
     static var isIndex: Bool { CommandLine.arguments.contains("--index") }
+
+    /// One-shot UI checks for screenshots, a moment after launch (once the fake accounts have data).
+    static func scheduleUIChecks(notch: NotchController, store: UsageStore) {
+        let args = CommandLine.arguments
+        if args.contains("--open-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { notch.openPanel() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { notch.closePanelUnlessHovered() }
+        }
+        if args.contains("--demo-alert") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                guard let id = store.accounts.first?.id else { return }
+                notch.presentAlert(AlertEvent(kind: .threshold(90), accountID: id, window: .session, percent: 90,
+                                              resetsAt: Date().addingTimeInterval(4800)))
+            }
+        }
+        // `--snapshot <dir>`: PNGs of the notch window at 1, 3, 11 and 16 s, rendered in-process (no screen recording).
+        if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
+            let dir = args[i + 1]
+            for t in [1.0, 3.0, 11.0, 16.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + t) {
+                    snapshot(notch.debugView, to: "\(dir)/notch-\(Int(t))s.png")
+                }
+            }
+        }
+    }
+
+    /// Renders the view's layer tree over a mid-gray backdrop, so the black shape is visible.
+    private static func snapshot(_ view: NSView, to path: String) {
+        guard let layer = view.layer else { return }
+        let scale = view.window?.backingScaleFactor ?? 2
+        let size = CGSize(width: view.bounds.width * scale, height: view.bounds.height * scale)
+        guard size.width > 0, size.height > 0,
+              let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        ctx.setFillColor(CGColor(gray: 0.55, alpha: 1))
+        ctx.fill(CGRect(origin: .zero, size: size))
+        ctx.scaleBy(x: scale, y: scale)
+        layer.render(in: ctx)
+        guard let image = ctx.makeImage(),
+              let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return }
+        do {
+            try data.write(to: URL(fileURLWithPath: path))
+            Log.info("snapshot \(path) \(Int(view.bounds.width))x\(Int(view.bounds.height))")
+        } catch {
+            Log.error("snapshot \(path): \(error)")
+        }
+    }
 
     static func makeStore() -> UsageStore {
         let fake = isFake

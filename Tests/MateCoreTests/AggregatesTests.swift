@@ -126,3 +126,13 @@ private func days(_ n: Int) -> TimeInterval { TimeInterval(n) * 86_400 }
     let tenDaysAgo = agg.daily(last: 11, now: now, calendar: cal).first!
     #expect(tenDaysAgo.perProvider[.claude] == 5000)
 }
+
+@Test func lastProjectIsTheNewestEventsProjectEvenWhenNotLive() {
+    var agg = UsageAggregates()
+    agg.add(event(at: now.addingTimeInterval(-3600), project: "old"), calendar: cal)
+    agg.add(event(at: now.addingTimeInterval(-600), project: "rambla"), calendar: cal)
+    agg.add(event(.codex, at: now.addingTimeInterval(-60), project: "other"), calendar: cal)
+    #expect(agg.liveSession(provider: .claude, now: now) == nil)
+    #expect(agg.lastProject(provider: .claude, now: now) == "rambla")
+    #expect(agg.lastProject(provider: .gemini, now: now) == nil)
+}

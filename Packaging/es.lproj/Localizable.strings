@@ -1,2 +1,61 @@
-/* Spanish is the source language: the keys in the code are the Spanish text, so this table is empty.
-   It exists so macOS knows Mate speaks Spanish. */
+/* Spanish is the source language: the keys in the code are the Spanish text, and each line here maps a key to
+   itself. The table tells macOS that Mate speaks Spanish. */
+
+
+/* Notch: right-click menu */
+"Uso…" = "Uso…";
+"Configuración…" = "Configuración…";
+"Actualizar ahora" = "Actualizar ahora";
+"Pausar" = "Pausar";
+"Reanudar" = "Reanudar";
+"Salir de Mate" = "Salir de Mate";
+
+/* Notch: pill and meters */
+"%lld %%" = "%lld %%";
+"Sesión" = "Sesión";
+"Semanal" = "Semanal";
+"Semanal %@" = "Semanal %@";
+"Ciclo de facturación" = "Ciclo de facturación";
+"Presupuesto mensual" = "Presupuesto mensual";
+"Diario %@" = "Diario %@";
+"Pedidos premium" = "Pedidos premium";
+"%lld min" = "%lld min";
+"%lld h" = "%lld h";
+"%lld h %lld min" = "%lld h %lld min";
+"se reinicia ahora" = "se reinicia ahora";
+"en %@" = "en %@";
+"se reinicia %@" = "se reinicia %@";
+"se reinicia %@ %@" = "se reinicia %@ %@";
+"Al día" = "Al día";
+"Vas rápido" = "Vas rápido";
+"Se acaba a las %@" = "Se acaba a las %@";
+"Límite alcanzado" = "Límite alcanzado";
+
+/* Notch: panel */
+"Abrir la ventana de uso" = "Abrir la ventana de uso";
+"Sin acceso al llavero" = "Sin acceso al llavero";
+"Reintentar" = "Reintentar";
+"Sesión vencida" = "Sesión vencida";
+"hace un momento" = "hace un momento";
+"hace %lld min" = "hace %lld min";
+"hace %lld h" = "hace %lld h";
+"%@ tokens" = "%@ tokens";
+"Todavía no hay datos de esta cuenta." = "Todavía no hay datos de esta cuenta.";
+"No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración." = "No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración.";
+
+/* Notch: alerts */
+"se acaba %@" = "se acaba %@";
+"%lld %% de la sesión" = "%lld %% de la sesión";
+"%lld %% del límite semanal" = "%lld %% del límite semanal";
+"%lld %% del límite semanal de %@" = "%lld %% del límite semanal de %@";
+"%lld %% del ciclo de facturación" = "%lld %% del ciclo de facturación";
+"%lld %% del presupuesto mensual" = "%lld %% del presupuesto mensual";
+"%lld %% del cupo diario de %@" = "%lld %% del cupo diario de %@";
+"%lld %% de los pedidos premium" = "%lld %% de los pedidos premium";
+"se reinició la sesión" = "se reinició la sesión";
+"se reinició el límite semanal" = "se reinició el límite semanal";
+"se reinició el límite semanal de %@" = "se reinició el límite semanal de %@";
+"se reinició el ciclo de facturación" = "se reinició el ciclo de facturación";
+"se reinició el presupuesto mensual" = "se reinició el presupuesto mensual";
+"se reinició el cupo diario de %@" = "se reinició el cupo diario de %@";
+"se reinició el cupo de pedidos premium" = "se reinició el cupo de pedidos premium";

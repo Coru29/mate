@@ -108,6 +108,12 @@ public struct UsageAggregates: Codable, Sendable {
         daily(last: 1, now: now, calendar: calendar).first?.perProvider ?? [:]
     }
 
+    /// Project of the provider's latest raw event with a project (last 2 days), live or not.
+    public func lastProject(provider: ProviderID, now: Date) -> String? {
+        raw.filter { $0.provider == provider && $0.at <= now && $0.project != nil }
+            .max(by: { $0.at < $1.at })?.project
+    }
+
     /// The session of the provider's latest raw event, if that event is at most 2 minutes old.
     public func liveSession(provider: ProviderID, now: Date) -> LiveSession? {
         let mine = raw.filter { $0.provider == provider && $0.at <= now }

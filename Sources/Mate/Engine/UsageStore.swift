@@ -10,6 +10,8 @@ final class UsageStore: ObservableObject {
     @Published private(set) var activeProvider: ProviderID?
     @Published var selectedAccountID: String?
     @Published private(set) var aggregates = UsageAggregates()
+    /// While paused nothing is fetched on a schedule and the agents' files are not watched.
+    @Published private(set) var isPaused = false
     var onAlert: (AlertEvent) -> Void = { _ in }
 
     static let sampleRetention: TimeInterval = 8 * 86_400
@@ -96,6 +98,7 @@ final class UsageStore: ObservableObject {
 
     func panelDidOpen() {
         panelOpen = true
+        guard !isPaused else { return }
         let now = Date()
         for a in registry.accounts where !a.hidden
             && schedule.shouldFetchOnPanelOpen(lastSuccess: snapshots[a.id]?.fetchedAt, now: now) {
@@ -109,7 +112,31 @@ final class UsageStore: ObservableObject {
         scheduleFetches()
     }
 
-    /// Explicit user action: also retries config dirs whose keychain prompt was denied.
+    /// Pausing stops every scheduled fetch and the FSEvents stream; resuming catches up on the logs and fetches.
+    func setPaused(_ paused: Bool) {
+        guard paused != isPaused else { return }
+        isPaused = paused
+        if paused {
+            fetchTimer?.invalidate()
+            fetchTimer = nil
+            watcher?.stop()
+            Log.info("paused")
+            return
+        }
+        watcher?.start()
+        for p in providers {
+            indexer.index(p, paths: p.watchedPaths, fullScan: true, qos: .utility) { [weak self] events, cursors in
+                self?.ingest(events, cursors: cursors)
+            }
+        }
+        Task {
+            for p in providers { await reconcile(p) }
+            scheduleFetches()
+        }
+        Log.info("resumed")
+    }
+
+    /// Explicit user action (also while paused): also retries config dirs whose keychain prompt was denied.
     func refreshNow() {
         deniedDirs.removeAll()
         Task {
@@ -391,6 +418,7 @@ final class UsageStore: ObservableObject {
     private func scheduleFetches() {
         fetchTimer?.invalidate()
         fetchTimer = nil
+        guard !isPaused else { return }
         let now = Date()
         let candidates = registry.accounts.filter(isSchedulable)
         guard let next = candidates.map({ due($0, now: now) }).min() else { return }
@@ -414,6 +442,7 @@ final class UsageStore: ObservableObject {
     // MARK: Files and activity
 
     private func filesChanged(_ paths: [String]) {
+        guard !isPaused else { return }
         let now = Date()
         for p in providers {
             let sessionFiles = Set(p.sessionFiles.flatMap { [$0, URL(fileURLWithPath: $0).resolvingSymlinksInPath().path] })

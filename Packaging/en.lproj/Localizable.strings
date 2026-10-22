@@ -1,2 +1,60 @@
 /* English translation of Mate. The keys are the Spanish text in the code (Spanish is the source
    language). scripts/check-localization.sh fails when a text in the code has no line here. */
+
+/* Notch: right-click menu */
+"Uso…" = "Usage…";
+"Configuración…" = "Settings…";
+"Actualizar ahora" = "Refresh Now";
+"Pausar" = "Pause";
+"Reanudar" = "Resume";
+"Salir de Mate" = "Quit Mate";
+
+/* Notch: pill and meters */
+"%lld %%" = "%lld%%";
+"Sesión" = "Session";
+"Semanal" = "Weekly";
+"Semanal %@" = "Weekly %@";
+"Ciclo de facturación" = "Billing cycle";
+"Presupuesto mensual" = "Monthly budget";
+"Diario %@" = "Daily %@";
+"Pedidos premium" = "Premium requests";
+"%lld min" = "%lld min";
+"%lld h" = "%lld h";
+"%lld h %lld min" = "%lld h %lld min";
+"se reinicia ahora" = "resets now";
+"en %@" = "in %@";
+"se reinicia %@" = "resets %@";
+"se reinicia %@ %@" = "resets %@ %@";
+"Al día" = "On track";
+"Vas rápido" = "Going fast";
+"Se acaba a las %@" = "Runs out at %@";
+"Límite alcanzado" = "Limit reached";
+
+/* Notch: panel */
+"Abrir la ventana de uso" = "Open the usage window";
+"Sin acceso al llavero" = "No keychain access";
+"Reintentar" = "Retry";
+"Sesión vencida" = "Session expired";
+"hace un momento" = "just now";
+"hace %lld min" = "%lld min ago";
+"hace %lld h" = "%lld h ago";
+"%@ tokens" = "%@ tokens";
+"Todavía no hay datos de esta cuenta." = "No data for this account yet.";
+"No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración." = "No accounts. Log in to an agent or add an account in Settings.";
+
+/* Notch: alerts */
+"se acaba %@" = "runs out %@";
+"%lld %% de la sesión" = "%lld%% of the session";
+"%lld %% del límite semanal" = "%lld%% of the weekly limit";
+"%lld %% del límite semanal de %@" = "%lld%% of the %@ weekly limit";
+"%lld %% del ciclo de facturación" = "%lld%% of the billing cycle";
+"%lld %% del presupuesto mensual" = "%lld%% of the monthly budget";
+"%lld %% del cupo diario de %@" = "%lld%% of the %@ daily quota";
+"%lld %% de los pedidos premium" = "%lld%% of the premium requests";
+"se reinició la sesión" = "the session reset";
+"se reinició el límite semanal" = "the weekly limit reset";
+"se reinició el límite semanal de %@" = "the %@ weekly limit reset";
+"se reinició el ciclo de facturación" = "the billing cycle reset";
+"se reinició el presupuesto mensual" = "the monthly budget reset";
+"se reinició el cupo diario de %@" = "the %@ daily quota reset";
+"se reinició el cupo de pedidos premium" = "the premium requests quota reset";
