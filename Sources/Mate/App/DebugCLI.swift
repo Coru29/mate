@@ -19,6 +19,10 @@ enum DebugCLI {
     /// reopening is only logged). With `--fake` the store runs as usual (`scripts/measure-idle.sh`); without it the
     /// store never starts, so the agents' sessions and the keychain are not touched (single-instance checks).
     static var isHeadless: Bool { ProcessInfo.processInfo.environment["MATE_HEADLESS"] == "1" }
+    /// `MATE_INVISIBLE=1`: the whole UI runs (notch window, pill, panel) but the window is transparent and lets
+    /// every click through, and the welcome guide is skipped: `scripts/measure-idle.sh` measures the notch's cost
+    /// without showing anything on the user's screen.
+    static var isInvisible: Bool { ProcessInfo.processInfo.environment["MATE_INVISIBLE"] == "1" }
     /// `--debug-update`: installs the newest release of the `updateFeedURL` test feed (see `Updater`).
     static var isDebugUpdate: Bool { CommandLine.arguments.contains("--debug-update") }
 

@@ -2,7 +2,8 @@ import Foundation
 import MateCore
 
 /// `--fake`: two scripted Claude-shaped accounts whose usage rises 1 %/min from launch. No network, no keychain,
-/// no real files. Used for UI checks.
+/// no real files. Used for UI checks. `MATE_FAKE_LOGS=<dir>` also watches that folder and reads the Claude Code JSONL
+/// transcripts written there (`scripts/measure-idle.sh --writer`: the cost of an agent writing its logs).
 final class FakeProvider: Provider, @unchecked Sendable {
     private struct Script {
         var dir: String
@@ -23,7 +24,12 @@ final class FakeProvider: Provider, @unchecked Sendable {
 
     let id = ProviderID.claude
     let launch = Date()
-    var watchedPaths: [String] { [] }
+    /// `MATE_FAKE_LOGS`, resolved once (FSEvents reports real paths).
+    private let logDir: String? = ProcessInfo.processInfo.environment["MATE_FAKE_LOGS"].flatMap { dir in
+        // realpath, not `resolvingSymlinksInPath`: that one turns /private/tmp into /tmp.
+        dir.isEmpty ? nil : realpath(dir, nil).map { p in defer { free(p) }; return String(cString: p) } ?? dir
+    }
+    var watchedPaths: [String] { logDir.map { [$0] } ?? [] }
     var sessionFiles: [String] { [] }
     var extraConfigDirs: [String] = []
     var alwaysActive: Bool { true }
@@ -74,10 +80,27 @@ final class FakeProvider: Provider, @unchecked Sendable {
         return t
     }
 
-    func logFiles(in paths: [String]) -> [String] { ["fake:log"] }
+    func logFiles(in paths: [String]) -> [String] {
+        guard let logDir else { return ["fake:log"] }
+        let fm = FileManager.default
+        var out: Set<String> = []
+        for path in paths where path == logDir || path.hasPrefix(logDir + "/") {
+            if path.hasSuffix(".jsonl") { if fm.fileExists(atPath: path) { out.insert(path) }; continue }
+            guard let e = fm.enumerator(atPath: path) else { continue }
+            for case let rel as String in e where rel.hasSuffix(".jsonl") {
+                out.insert((path as NSString).appendingPathComponent(rel))
+            }
+        }
+        // The scripted history comes with the first full scan (of the watched folder).
+        return (paths.contains(logDir) ? ["fake:log"] : []) + out.sorted()
+    }
+
+    func configDir(forLogFile path: String) -> String? { path == "fake:log" ? nil : "fake:personal" }
 
     /// A week of scripted history, once.
     func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool) {
+        let files = changedPaths.filter { $0 != "fake:log" }
+        if !files.isEmpty { return Self.transcriptEvents(files, cursors: &cursors) }
         guard changedPaths.contains("fake:log"), cursors["fake:log"] == nil else { return ([], false) }
         cursors["fake:log"] = FileCursor(inode: 0, offset: 1, pending: Data())
         var events: [TokenEvent] = []
@@ -96,5 +119,26 @@ final class FakeProvider: Provider, @unchecked Sendable {
             }
         }
         return (events, false)
+    }
+
+    /// Claude Code's transcript format, as `ClaudeProvider` reads it.
+    private static func transcriptEvents(_ paths: [String], cursors: inout [String: FileCursor])
+        -> (events: [TokenEvent], more: Bool) {
+        var events: [TokenEvent] = []
+        var more = false
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            guard let r = try? IncrementalReader.read(url: url, cursor: cursors[path]) else {
+                cursors[path] = nil
+                continue
+            }
+            cursors[path] = r.cursor
+            more = more || !r.atEnd
+            let session = url.deletingPathExtension().lastPathComponent
+            for line in r.lines {
+                if let e = autoreleasepool(invoking: { ClaudeLog.events(from: line, sessionID: session) }) { events.append(e) }
+            }
+        }
+        return (events, more)
     }
 }

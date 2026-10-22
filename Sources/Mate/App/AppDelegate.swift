@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         notch.show()
-        if WelcomeWindowController.hasOnboarded && !DebugCLI.forceWelcome {
+        if (WelcomeWindowController.hasOnboarded || DebugCLI.isInvisible) && !DebugCLI.forceWelcome {
             store.start()
         } else {
             // The agents' sessions (and macOS's keychain prompt) wait until the guide has explained the prompt.

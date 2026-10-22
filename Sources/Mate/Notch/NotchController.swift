@@ -92,6 +92,10 @@ final class NotchController {
     // MARK: Public API
 
     func show() {
+        if DebugCLI.isInvisible {
+            window.alphaValue = 0
+            window.ignoresMouseEvents = true
+        }
         window.contentView = root
         root.content.addSubview(pill)
         root.onHover = { [weak self] inside in self?.hoverChanged(inside) }
