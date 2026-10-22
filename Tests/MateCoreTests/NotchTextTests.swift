@@ -42,3 +42,15 @@ private let now = Date(timeIntervalSince1970: 1_792_670_400)
     let r = AlertEvent(kind: .reset, accountID: "a", window: .session, percent: 2, resetsAt: nil)
     #expect(NotchText.alert(r, title: "Claude · Personal", pace: nil) == "Claude · Personal: se reinició la sesión")
 }
+
+@Test func tokensShortUsesKAndM() {
+    #expect(NotchText.tokensShort(950) == "950")
+    #expect(NotchText.tokensShort(182_400) == "182 k")
+    #expect(NotchText.tokensShort(1_240_000).hasSuffix(" M"))
+    #expect(NotchText.tokensShort(25_000_000) == "25 M")
+}
+
+@Test func usdHasTwoDecimals() {
+    #expect(NotchText.usd(12.3) == "$12.30")
+    #expect(NotchText.usd(0) == "$0.00")
+}

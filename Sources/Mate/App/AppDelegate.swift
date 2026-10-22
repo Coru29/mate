@@ -9,8 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let store = DebugCLI.makeStore()
         let notch = NotchController(store: store)
-        // The usage window and settings arrive in later tasks.
-        notch.onOpenUsage = { Log.info("open usage window") }
+        UsageWindowController.shared.store = store
+        notch.onOpenUsage = { UsageWindowController.shared.show() }
+        // Settings arrives in a later task.
         notch.onOpenSettings = { Log.info("open settings") }
         store.onAlert = { [weak notch] event in
             Log.info("alert \(event.kind) \(event.accountID) \(event.window.key) \(Int(event.percent)) %")

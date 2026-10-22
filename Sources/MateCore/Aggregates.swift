@@ -15,8 +15,25 @@ public struct UsageAggregates: Codable, Sendable {
         var day: Date
         var providers: [String: Int] = [:]
         var models: [String: ModelTotals] = [:]
+        /// Per provider, then model (for the provider filter).
+        var providerModels: [String: [String: ModelTotals]] = [:]
+        /// Per account id, then model; only events whose account could be attributed (for the account filter).
+        var accountModels: [String: [String: ModelTotals]] = [:]
         /// FNV-1a 64 hashes of the `dedupeKey`s counted into this day; lives and dies with the bucket.
         var keys: Set<UInt64> = []
+
+        init(day: Date) { self.day = day }
+
+        // Buckets persisted before the per-provider and per-account slices existed still decode.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            day = try c.decode(Date.self, forKey: .day)
+            providers = try c.decode([String: Int].self, forKey: .providers)
+            models = try c.decode([String: ModelTotals].self, forKey: .models)
+            providerModels = try c.decodeIfPresent([String: [String: ModelTotals]].self, forKey: .providerModels) ?? [:]
+            accountModels = try c.decodeIfPresent([String: [String: ModelTotals]].self, forKey: .accountModels) ?? [:]
+            keys = try c.decode(Set<UInt64>.self, forKey: .keys)
+        }
     }
 
     /// Stable across processes (unlike `Hasher`), so persisted dedupe survives relaunches.
@@ -40,8 +57,9 @@ public struct UsageAggregates: Codable, Sendable {
     public var rawEventCount: Int { raw.count }
 
     /// Returns false (and ignores the event) when its `dedupeKey` was already counted on the event's day.
+    /// `accountID` (from `SwitchHistory`) also counts the event into the per-account slice.
     @discardableResult
-    public mutating func add(_ e: TokenEvent, calendar: Calendar = .current) -> Bool {
+    public mutating func add(_ e: TokenEvent, accountID: String? = nil, calendar: Calendar = .current) -> Bool {
         let day = calendar.startOfDay(for: e.at)
         let i: Int
         if let found = buckets.firstIndex(where: { $0.day == day }) {
@@ -54,9 +72,16 @@ public struct UsageAggregates: Codable, Sendable {
         if let hash, buckets[i].keys.contains(hash) { return false }
         if let hash { buckets[i].keys.insert(hash) }
         buckets[i].providers[e.provider.rawValue, default: 0] += e.totalTokens
-        buckets[i].models[e.model, default: ModelTotals()].tokens += e.totalTokens
-        buckets[i].models[e.model, default: ModelTotals()].cost += Pricing.cost(
+        let cost = Pricing.cost(
             model: e.model, input: e.input, output: e.output, cacheRead: e.cacheRead, cacheWrite: e.cacheWrite)
+        buckets[i].models[e.model, default: ModelTotals()].tokens += e.totalTokens
+        buckets[i].models[e.model, default: ModelTotals()].cost += cost
+        buckets[i].providerModels[e.provider.rawValue, default: [:]][e.model, default: ModelTotals()].tokens += e.totalTokens
+        buckets[i].providerModels[e.provider.rawValue, default: [:]][e.model, default: ModelTotals()].cost += cost
+        if let accountID {
+            buckets[i].accountModels[accountID, default: [:]][e.model, default: ModelTotals()].tokens += e.totalTokens
+            buckets[i].accountModels[accountID, default: [:]][e.model, default: ModelTotals()].cost += cost
+        }
 
         newest = max(newest ?? e.at, e.at)
         if let newest, e.at >= newest.addingTimeInterval(-Self.rawRetention) { raw.append(e) }
@@ -77,25 +102,41 @@ public struct UsageAggregates: Codable, Sendable {
     }
 
     /// One entry per day, oldest first, ending with the day of `now`; days without usage have an empty dictionary.
-    public func daily(last days: Int, now: Date, calendar: Calendar = .current) -> [(day: Date, perProvider: [ProviderID: Int])] {
+    /// With `account`, only tokens attributed to that account, under its provider (ids are `"<provider>:<identity>"`).
+    public func daily(last days: Int, now: Date, account: String? = nil,
+                      calendar: Calendar = .current) -> [(day: Date, perProvider: [ProviderID: Int])] {
         let today = calendar.startOfDay(for: now)
         return (0..<max(0, days)).reversed().compactMap { back in
             guard let day = calendar.date(byAdding: .day, value: -back, to: today) else { return nil }
             var per: [ProviderID: Int] = [:]
             if let b = buckets.first(where: { $0.day == day }) {
-                for (k, v) in b.providers { if let p = ProviderID(rawValue: k) { per[p] = v } }
+                if let account {
+                    let total = b.accountModels[account]?.values.reduce(0) { $0 + $1.tokens } ?? 0
+                    if total > 0, let p = Self.provider(ofAccount: account) { per[p] = total }
+                } else {
+                    for (k, v) in b.providers { if let p = ProviderID(rawValue: k) { per[p] = v } }
+                }
             }
             return (day, per)
         }
     }
 
-    /// Models used in the last `days` days (today included), biggest first.
-    public func byModel(last days: Int, now: Date, calendar: Calendar = .current) -> [(model: String, tokens: Int, cost: Double)] {
+    static func provider(ofAccount id: String) -> ProviderID? {
+        id.split(separator: ":", maxSplits: 1).first.flatMap { ProviderID(rawValue: String($0)) }
+    }
+
+    /// Models used in the last `days` days (today included), biggest first. `account` wins over `provider`.
+    public func byModel(last days: Int, now: Date, provider: ProviderID? = nil, account: String? = nil,
+                        calendar: Calendar = .current) -> [(model: String, tokens: Int, cost: Double)] {
         let today = calendar.startOfDay(for: now)
         guard let from = calendar.date(byAdding: .day, value: -(max(1, days) - 1), to: today) else { return [] }
         var sums: [String: ModelTotals] = [:]
         for b in buckets where b.day >= from && b.day <= today {
-            for (m, t) in b.models {
+            let models: [String: ModelTotals]
+            if let account { models = b.accountModels[account] ?? [:] }
+            else if let provider { models = b.providerModels[provider.rawValue] ?? [:] }
+            else { models = b.models }
+            for (m, t) in models {
                 sums[m, default: ModelTotals()].tokens += t.tokens
                 sums[m, default: ModelTotals()].cost += t.cost
             }

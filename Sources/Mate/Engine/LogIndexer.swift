@@ -44,7 +44,8 @@ final class LogIndexer: @unchecked Sendable {
                     autoreleasepool {
                         let before = cursors[file]?.offset ?? 0
                         let r = provider.logEvents(changedPaths: [file], cursors: &cursors)
-                        events += r.events
+                        let dir = provider.configDir(forLogFile: file)
+                        events += dir.map { d in r.events.map { var e = $0; e.logDir = e.logDir ?? d; return e } } ?? r.events
                         more = r.more
                         let after = cursors[file]?.offset ?? before
                         bytes += after > before ? after - before : after

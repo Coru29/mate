@@ -58,3 +58,17 @@
 "se reinició el presupuesto mensual" = "the monthly budget reset";
 "se reinició el cupo diario de %@" = "the %@ daily quota reset";
 "se reinició el cupo de pedidos premium" = "the premium requests quota reset";
+"Uso" = "Usage";
+"Hoy" = "Today";
+"Todos" = "All";
+"Cuenta" = "Account";
+"Todas las cuentas" = "All accounts";
+"Sin uso registrado" = "No usage recorded";
+"Últimos 7 días" = "Last 7 days";
+"Últimos 30 días por modelo" = "Last 30 days by model";
+"Modelo" = "Model";
+"Tokens" = "Tokens";
+"Costo estimado (precio de API)" = "Estimated cost (API price)";
+"Estimado con el precio de lista de la API; no es lo que cobra tu plan. Solo cuentan los logs locales." = "Estimated at the API list price; not what your plan charges. Only local logs count.";
+"Día" = "Day";
+"Proveedor" = "Provider";

@@ -11,6 +11,13 @@ enum DebugCLI {
     static var isDump: Bool { CommandLine.arguments.contains("--dump") }
     static var isIndex: Bool { CommandLine.arguments.contains("--index") }
 
+    /// `--dump --day YYYY-MM-DD`: the day to print per-provider/per-model totals for (log reading only).
+    static var dumpDay: String? {
+        let args = CommandLine.arguments
+        guard isDump, let i = args.firstIndex(of: "--day"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
     /// One-shot UI checks for screenshots, a moment after launch (once the fake accounts have data).
     static func scheduleUIChecks(notch: NotchController, store: UsageStore) {
         let args = CommandLine.arguments
@@ -23,6 +30,22 @@ enum DebugCLI {
                 guard let id = store.accounts.first?.id else { return }
                 notch.presentAlert(AlertEvent(kind: .threshold(90), accountID: id, window: .session, percent: 90,
                                               resetsAt: Date().addingTimeInterval(4800)))
+            }
+        }
+        // `--open-usage`: opens the usage window after launch; with `--snapshot <dir>` also writes usage.png.
+        if args.contains("--open-usage") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { UsageWindowController.shared.show() }
+            if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
+                let dir = args[i + 1]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                    // The window's own pixels (SwiftUI text does not survive `cacheDisplay`).
+                    guard let number = UsageWindowController.shared.debugWindowNumber,
+                          let image = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(number),
+                                                              .boundsIgnoreFraming) else { return }
+                    try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
+                        .write(to: URL(fileURLWithPath: "\(dir)/usage.png"))
+                    Log.info("snapshot \(dir)/usage.png")
+                }
             }
         }
         // `--snapshot <dir>`: PNGs of the notch window at 1, 3, 11 and 16 s, rendered in-process (no screen recording).
@@ -94,6 +117,37 @@ enum DebugCLI {
             let today = aggregates.today(now: Date()).values.reduce(0, +)
             print("indexed \(count) events in \(String(format: "%.1f", Date().timeIntervalSince(started))) s; "
                   + "tokens today \(today); peak RSS \(usage.ru_maxrss / 1_048_576) MB")
+            exit(0)
+        })
+        dispatchMain()
+    }
+
+    /// `--dump --day YYYY-MM-DD`: indexes the Claude logs into the data dir (no keychain, no network; use
+    /// `MATE_DATA_DIR`), prints that local day's tokens per provider and per model, and exits.
+    static func dumpDay(_ day: String) -> Never {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        guard let date = f.date(from: day) else { print("bad day '\(day)', expected YYYY-MM-DD"); exit(2) }
+        let persistence = Persistence(dir: Persistence.defaultDir(fake: false))
+        let provider = ClaudeProvider()
+        let indexer = LogIndexer(cursors: persistence.load([String: FileCursor].self, "cursors") ?? [:])
+        var aggregates = persistence.load(UsageAggregates.self, "aggregates") ?? UsageAggregates()
+        indexer.index(provider, paths: provider.watchedPaths, fullScan: true, qos: .userInitiated, deliver: { events, cursors in
+            for e in events { aggregates.add(e) }
+            persistence.save("aggregates") { aggregates }
+            persistence.save("cursors") { cursors }
+        }, done: {
+            persistence.flush()
+            let noon = date.addingTimeInterval(12 * 3600)
+            let perProvider = aggregates.daily(last: 1, now: noon)[0].perProvider
+            print("day \(day)")
+            for (p, total) in perProvider.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+                print("\(p.rawValue): \(total) tokens")
+                for m in aggregates.byModel(last: 1, now: noon, provider: p) {
+                    print("  \(m.model): \(m.tokens) tokens, est. \(NotchText.usd(m.cost))")
+                }
+            }
+            if perProvider.isEmpty { print("no usage") }
             exit(0)
         })
         dispatchMain()

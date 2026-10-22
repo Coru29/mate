@@ -85,10 +85,14 @@ final class FakeProvider: Provider, @unchecked Sendable {
         for day in 0..<7 {
             for i in 0..<(3 + day % 3) {
                 let at = launch.addingTimeInterval(-Double(day) * 86_400 - Double(i) * 1800 - 60)
-                events.append(TokenEvent(provider: .claude, at: at, model: models[i % 2], input: 1200 * (i + 1),
+                // Every third request is Codex's (no account attribution), the rest alternate between the two dirs.
+                let codex = i % 3 == 2
+                events.append(TokenEvent(provider: codex ? .codex : .claude, at: at,
+                                         model: codex ? "gpt-5-codex" : models[i % 2], input: 1200 * (i + 1),
                                          output: 800 + 150 * day, cacheRead: 40_000, cacheWrite: 3000,
                                          project: "mate", sessionID: "fake-\(day)",
-                                         dedupeKey: "fake-\(day)-\(i)"))
+                                         dedupeKey: "fake-\(day)-\(i)",
+                                         logDir: codex ? nil : (i % 2 == 0 ? "fake:personal" : "fake:work")))
             }
         }
         return (events, false)

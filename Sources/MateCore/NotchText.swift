@@ -72,6 +72,21 @@ public enum NotchText {
         return String(localized: "\(amount) tokens")
     }
 
+    /// Compact count for chart axes and tables: "950", "182 k", "1,2 M".
+    public static func tokensShort(_ n: Int) -> String {
+        if n >= 1_000_000 {
+            let m = Double(n) / 1_000_000
+            return m.formatted(.number.precision(.fractionLength(m >= 10 ? 0 : 1))) + " M"
+        }
+        if n >= 1000 { return "\(n / 1000) k" }
+        return "\(n)"
+    }
+
+    /// "$12.34" (US dollars, 2 decimals, whatever the locale).
+    public static func usd(_ amount: Double) -> String {
+        amount.formatted(.currency(code: "USD").locale(Locale(identifier: "en_US")).precision(.fractionLength(2)))
+    }
+
     /// One-line alert: "Claude · Personal: 90 % de la sesión · se acaba 16:40".
     public static func alert(_ e: AlertEvent, title: String, pace state: PaceState?) -> String {
         let body: String

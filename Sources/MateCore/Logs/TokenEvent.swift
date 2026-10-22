@@ -12,9 +12,11 @@ public struct TokenEvent: Codable, Hashable, Sendable {
     public var project: String?
     public var sessionID: String
     public var dedupeKey: String?
+    /// Config dir of the log file the event came from ("~/.claude"); set by the log indexer, used for account attribution.
+    public var logDir: String?
 
     public init(provider: ProviderID, at: Date, model: String, input: Int, output: Int, cacheRead: Int,
-                cacheWrite: Int, project: String?, sessionID: String, dedupeKey: String?) {
+                cacheWrite: Int, project: String?, sessionID: String, dedupeKey: String?, logDir: String? = nil) {
         self.provider = provider
         self.at = at
         self.model = model
@@ -25,6 +27,7 @@ public struct TokenEvent: Codable, Hashable, Sendable {
         self.project = project
         self.sessionID = sessionID
         self.dedupeKey = dedupeKey
+        self.logDir = logDir
     }
 
     /// Input + output + cache read + cache write.

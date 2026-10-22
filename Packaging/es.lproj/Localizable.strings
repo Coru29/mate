@@ -59,3 +59,17 @@
 "se reinició el presupuesto mensual" = "se reinició el presupuesto mensual";
 "se reinició el cupo diario de %@" = "se reinició el cupo diario de %@";
 "se reinició el cupo de pedidos premium" = "se reinició el cupo de pedidos premium";
+"Uso" = "Uso";
+"Hoy" = "Hoy";
+"Todos" = "Todos";
+"Cuenta" = "Cuenta";
+"Todas las cuentas" = "Todas las cuentas";
+"Sin uso registrado" = "Sin uso registrado";
+"Últimos 7 días" = "Últimos 7 días";
+"Últimos 30 días por modelo" = "Últimos 30 días por modelo";
+"Modelo" = "Modelo";
+"Tokens" = "Tokens";
+"Costo estimado (precio de API)" = "Costo estimado (precio de API)";
+"Estimado con el precio de lista de la API; no es lo que cobra tu plan. Solo cuentan los logs locales." = "Estimado con el precio de lista de la API; no es lo que cobra tu plan. Solo cuentan los logs locales.";
+"Día" = "Día";
+"Proveedor" = "Proveedor";

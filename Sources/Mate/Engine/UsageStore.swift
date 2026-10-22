@@ -32,6 +32,7 @@ final class UsageStore: ObservableObject {
     private var registry: AccountRegistry
     private var samplesByKey: [String: [Sample]]
     private var alertEngine: AlertEngine
+    private var switchHistory: SwitchHistory
     private var fetchState: [String: FetchState] = [:]
     private var activity = ActivityTracker()
     private var panelOpen = false
@@ -53,6 +54,7 @@ final class UsageStore: ObservableObject {
         snapshots = persistence.load([String: UsageSnapshot].self, "snapshots") ?? [:]
         samplesByKey = persistence.load([String: [Sample]].self, "samples") ?? [:]
         alertEngine = persistence.load(AlertEngine.self, "alerts") ?? AlertEngine()
+        switchHistory = persistence.load(SwitchHistory.self, "switchHistory") ?? SwitchHistory()
         aggregates = persistence.load(UsageAggregates.self, "aggregates") ?? UsageAggregates()
         indexer = LogIndexer(cursors: persistence.load([String: FileCursor].self, "cursors") ?? [:])
         accounts = registry.accounts
@@ -77,14 +79,15 @@ final class UsageStore: ObservableObject {
         watcher = w
         updateActivity()
         let firstRun = indexer.isFirstRun
-        for p in providers {
-            indexer.index(p, paths: p.watchedPaths, fullScan: true,
-                          qos: firstRun ? .background : .utility) { [weak self] events, cursors in
-                self?.ingest(events, cursors: cursors)
-            }
-        }
         Task {
             for p in providers { await reconcile(p) }
+            // Indexed after the reconcile so the switch history already knows each dir's account.
+            for p in providers {
+                indexer.index(p, paths: p.watchedPaths, fullScan: true,
+                              qos: firstRun ? .background : .utility) { [weak self] events, cursors in
+                    self?.ingest(events, cursors: cursors)
+                }
+            }
             scheduleFetches()
         }
     }
@@ -166,6 +169,7 @@ final class UsageStore: ObservableObject {
             let before = Dictionary(uniqueKeysWithValues: registry.accounts.map { ($0.id, ($0.owner, $0.agentConfigDir)) })
             let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs)
             commitRegistry()
+            recordSwitches(scan.sessions, provider: p.id)
             for action in actions {
                 switch action {
                 case .storeShadow(let id, let dir):
@@ -186,6 +190,15 @@ final class UsageStore: ObservableObject {
             }
         } while reconcileAgain.contains(p.id)
         scheduleFetches()
+    }
+
+    private func recordSwitches(_ sessions: [ObservedSession], provider id: ProviderID) {
+        let now = Date()
+        let before = switchHistory
+        for s in sessions where s.provider == id {
+            switchHistory.record(configDir: s.configDir, accountID: "\(id.rawValue):\(s.identity)", at: now)
+        }
+        if switchHistory != before { persistence.save("switchHistory") { [unowned self] in switchHistory } }
     }
 
     /// The agent's credentials for `configDir`. Reads are shared per dir (one keychain prompt at a time); a denied
@@ -481,7 +494,10 @@ final class UsageStore: ObservableObject {
     private func ingest(_ events: [TokenEvent], cursors: [String: FileCursor]) {
         if !events.isEmpty {
             var agg = aggregates
-            for e in events { agg.add(e) }
+            for e in events {
+                let account = e.logDir.flatMap { switchHistory.account(forConfigDir: $0, at: e.at) }
+                agg.add(e, accountID: account)
+            }
             aggregates = agg
             persistence.save("aggregates") { [unowned self] in aggregates }
         }

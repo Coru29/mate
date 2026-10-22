@@ -2,6 +2,7 @@ import AppKit
 
 MainActor.assumeIsolated {
     if DebugCLI.isIndex { DebugCLI.index() }
+    if let day = DebugCLI.dumpDay { DebugCLI.dumpDay(day) }
     if DebugCLI.isDump {
         Task { await DebugCLI.dump() }
         dispatchMain()

@@ -64,10 +64,13 @@ protocol Provider: AnyObject, Sendable {
     /// The provider's log files among (or, for directories, under) `paths`.
     func logFiles(in paths: [String]) -> [String]
     /// Reads at most one bounded chunk per file; `more` is true while some file has unread bytes left.
+    /// The config dir the log file belongs to (account attribution); nil when the provider has no per-dir logs.
+    func configDir(forLogFile path: String) -> String?
     func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool)
 }
 
 extension Provider {
+    func configDir(forLogFile path: String) -> String? { nil }
     var alwaysActive: Bool { false }
 
     /// Refreshes only an account Mate owns; an agent-owned account throws `.refreshNotAllowed` before any request.

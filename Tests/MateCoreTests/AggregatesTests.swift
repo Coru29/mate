@@ -136,3 +136,35 @@ private func days(_ n: Int) -> TimeInterval { TimeInterval(n) * 86_400 }
     #expect(agg.lastProject(provider: .claude, now: now) == "rambla")
     #expect(agg.lastProject(provider: .gemini, now: now) == nil)
 }
+
+@Test func providerFilterSlicesModelsAndAccountFilterSlicesBoth() {
+    var agg = UsageAggregates()
+    agg.add(event(.claude, at: now, model: "claude-sonnet-4-5", tokens: 100), accountID: "claude:a", calendar: cal)
+    agg.add(event(.claude, at: now, model: "claude-opus-4-1", tokens: 40), accountID: "claude:b", calendar: cal)
+    agg.add(event(.claude, at: now, model: "claude-sonnet-4-5", tokens: 7), calendar: cal)
+    agg.add(event(.codex, at: now, model: "gpt-5-codex", tokens: 10), calendar: cal)
+    #expect(agg.byModel(last: 30, now: now, calendar: cal).map(\.tokens).reduce(0, +) == 157)
+    let claude = agg.byModel(last: 30, now: now, provider: .claude, calendar: cal)
+    #expect(claude.map(\.model) == ["claude-sonnet-4-5", "claude-opus-4-1"])
+    #expect(claude.first?.tokens == 107)
+    let a = agg.byModel(last: 30, now: now, account: "claude:a", calendar: cal)
+    #expect(a.count == 1 && a[0].tokens == 100)
+    #expect(agg.daily(last: 1, now: now, account: "claude:b", calendar: cal)[0].perProvider == [.claude: 40])
+    #expect(agg.daily(last: 1, now: now, account: "claude:zzz", calendar: cal)[0].perProvider.isEmpty)
+}
+
+@Test func bucketsWithoutAccountSlicesStillDecode() throws {
+    var agg = UsageAggregates()
+    agg.add(event(at: now, tokens: 100), accountID: "claude:a", calendar: cal)
+    var json = try #require(String(data: JSONEncoder().encode(agg), encoding: .utf8))
+    #expect(json.contains("accountModels"))
+    // Strip the two new keys the way an older file would lack them.
+    let obj = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    var buckets = try #require(obj["buckets"] as? [[String: Any]])
+    for i in buckets.indices { buckets[i]["providerModels"] = nil; buckets[i]["accountModels"] = nil }
+    var old = obj
+    old["buckets"] = buckets
+    json = String(decoding: try JSONSerialization.data(withJSONObject: old), as: UTF8.self)
+    let back = try JSONDecoder().decode(UsageAggregates.self, from: Data(json.utf8))
+    #expect(back.byModel(last: 30, now: now, calendar: cal).first?.tokens == 100)
+}
