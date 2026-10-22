@@ -66,7 +66,6 @@ private func days(_ n: Int) -> TimeInterval { TimeInterval(n) * 86_400 }
     #expect(agg.rawEventCount == 1)
     agg.add(event(at: now, key: "k-new"), calendar: cal)
     #expect(agg.rawEventCount == 1)
-    #expect(agg.seenKeyCount == 1)
     let d = agg.daily(last: 7, now: now, calendar: cal)
     #expect(d[3].perProvider == [.claude: 100])
     #expect(d[6].perProvider == [.claude: 100])
@@ -94,4 +93,25 @@ private func days(_ n: Int) -> TimeInterval { TimeInterval(n) * 86_400 }
     #expect(abs(c("gemini-2.5-pro", M, M, r: M) - (1.25 + 10 + 0.31)) < 1e-9)
     #expect(abs(c("gemini-2.5-flash", M, M) - 2.8) < 1e-9)
     #expect(c("mystery-model", M, M) == 0)
+}
+
+@Test func duplicateOfOldEventCountedOnce() {
+    var agg = UsageAggregates()
+    agg.add(event(at: now, key: "k-new"), calendar: cal)
+    let old = event(at: now.addingTimeInterval(-days(10)), model: "claude-sonnet-4-5", key: "K")
+    let a = agg.add(old, calendar: cal)
+    let b = agg.add(old, calendar: cal)
+    #expect(a && !b)
+    #expect(agg.daily(last: 14, now: now, calendar: cal)[3].perProvider == [.claude: 100])
+    #expect(agg.byModel(last: 30, now: now, calendar: cal).first?.tokens == 200)
+}
+
+@Test func duplicateAcrossCodableRoundTripCountedOnce() throws {
+    var agg = UsageAggregates()
+    let e = event(at: now.addingTimeInterval(-days(5)), key: "K")
+    agg.add(e, calendar: cal)
+    var back = try JSONDecoder().decode(UsageAggregates.self, from: JSONEncoder().encode(agg))
+    let again = back.add(e, calendar: cal)
+    #expect(!again)
+    #expect(back.byModel(last: 30, now: now, calendar: cal).first?.tokens == 100)
 }

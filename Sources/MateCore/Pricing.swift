@@ -17,6 +17,7 @@ public enum Pricing {
         ("gemini-2.5-pro", 1.25, 10, 0, 0.31),
         ("gemini-3-pro", 1.25, 10, 0, 0.31),
         ("gemini-2.5-flash", 0.3, 2.5, 0, 0.075),
+        ("gemini-3-flash", 0.3, 2.5, 0, 0.075),
     ]
 
     /// Estimated cost in USD. The longest matching prefix wins; an unknown model costs 0.

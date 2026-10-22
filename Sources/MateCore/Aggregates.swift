@@ -7,14 +7,23 @@ public struct LiveSession: Equatable, Sendable {
 }
 
 /// Token usage rolled up per local calendar day, provider and model. Raw events (and their dedupe keys) are kept
-/// only for the last 2 days, relative to the newest event seen; older raw events are dropped on `add` because
-/// their totals already live in the day buckets.
+/// only for the last 2 days (for `liveSession`), relative to the newest event seen. Dedupe is per day bucket,
+/// so a duplicate of an old event is still rejected.
 public struct UsageAggregates: Codable, Sendable {
     struct ModelTotals: Codable, Sendable { var tokens = 0; var cost = 0.0 }
     struct Bucket: Codable, Sendable {
         var day: Date
         var providers: [String: Int] = [:]
         var models: [String: ModelTotals] = [:]
+        /// FNV-1a 64 hashes of the `dedupeKey`s counted into this day; lives and dies with the bucket.
+        var keys: Set<UInt64> = []
+    }
+
+    /// Stable across processes (unlike `Hasher`), so persisted dedupe survives relaunches.
+    static func fnv1a(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+        return h
     }
 
     static let rawRetention: TimeInterval = 2 * 86_400
@@ -23,19 +32,16 @@ public struct UsageAggregates: Codable, Sendable {
 
     var buckets: [Bucket] = []
     var raw: [TokenEvent] = []
-    var seenKeys: Set<String> = []
     var newest: Date?
+    var compactedDay: Date?
 
     public init() {}
 
     public var rawEventCount: Int { raw.count }
-    public var seenKeyCount: Int { seenKeys.count }
 
-    /// Returns false (and ignores the event) when its `dedupeKey` was already counted among the raw events.
-    /// Events older than the raw window when added skip deduplication.
+    /// Returns false (and ignores the event) when its `dedupeKey` was already counted on the event's day.
     @discardableResult
     public mutating func add(_ e: TokenEvent, calendar: Calendar = .current) -> Bool {
-        if let k = e.dedupeKey, seenKeys.contains(k) { return false }
         let day = calendar.startOfDay(for: e.at)
         let i: Int
         if let found = buckets.firstIndex(where: { $0.day == day }) {
@@ -44,24 +50,26 @@ public struct UsageAggregates: Codable, Sendable {
             buckets.append(Bucket(day: day))
             i = buckets.count - 1
         }
+        let hash = e.dedupeKey.map(Self.fnv1a)
+        if let hash, buckets[i].keys.contains(hash) { return false }
+        if let hash { buckets[i].keys.insert(hash) }
         buckets[i].providers[e.provider.rawValue, default: 0] += e.totalTokens
         buckets[i].models[e.model, default: ModelTotals()].tokens += e.totalTokens
         buckets[i].models[e.model, default: ModelTotals()].cost += Pricing.cost(
             model: e.model, input: e.input, output: e.output, cacheRead: e.cacheRead, cacheWrite: e.cacheWrite)
 
         raw.append(e)
-        if let k = e.dedupeKey { seenKeys.insert(k) }
         newest = max(newest ?? e.at, e.at)
-        compact(calendar: calendar)
+        if let newest, compactedDay != calendar.startOfDay(for: newest) {
+            compactedDay = calendar.startOfDay(for: newest)
+            compact(calendar: calendar)
+        }
         return true
     }
 
     private mutating func compact(calendar: Calendar) {
         guard let newest else { return }
         let cutoff = newest.addingTimeInterval(-Self.rawRetention)
-        for e in raw where e.at < cutoff {
-            if let k = e.dedupeKey { seenKeys.remove(k) }
-        }
         raw.removeAll { $0.at < cutoff }
         if let oldest = calendar.date(byAdding: .day, value: -Self.bucketRetentionDays, to: newest) {
             buckets.removeAll { $0.day < oldest }
