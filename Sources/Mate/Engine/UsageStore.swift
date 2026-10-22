@@ -221,13 +221,7 @@ final class UsageStore: ObservableObject {
     func removeAccount(_ id: String) {
         guard let account = registry.accounts.first(where: { $0.id == id }) else { return }
         let p = provider(account.provider)
-        var drop = registry.remove(id).compactMap { action -> String? in
-            if case .dropMateCopy(let accountID) = action { return accountID }
-            return nil
-        }
-        // The shadow copy kept for an agent-owned account is Mate's own item too.
-        if account.owner == .agent && p?.agentOnly == false { drop.append(id) }
-        for accountID in drop {
+        for case .dropMateCopy(let accountID) in registry.remove(id, agentOnly: p?.agentOnly ?? false) {
             do { try vault.delete(account.provider, accountID: accountID) } catch { Log.error("vault delete \(accountID): \(error)") }
         }
         do { try p?.accountRemoved(account) } catch { Log.error("\(id): could not forget the stored key: \(error)") }
@@ -389,7 +383,7 @@ final class UsageStore: ObservableObject {
     }
 
     /// The agent's credentials for `configDir`. Reads are shared per dir (one keychain prompt at a time); a denied
-    /// prompt marks the dir and its accounts `.error("keychainDenied")` and blocks automatic reads until `refreshNow()`.
+    /// prompt marks the dir and its accounts `.error(AccountRegistry.keychainDenied)` and blocks automatic reads until `refreshNow()`.
     private func agentCredentials(_ p: any Provider, configDir dir: String) async throws -> Data? {
         let key = "\(p.id.rawValue)|\(dir)"
         if deniedDirs.contains(key) { throw ProviderError.credentialsDenied }
@@ -403,7 +397,7 @@ final class UsageStore: ObservableObject {
             deniedDirs.insert(key)
             Log.error("\(p.id.rawValue): keychain access denied for \(dir); waiting for an explicit refresh")
             for a in registry.accounts where a.provider == p.id && a.owner == .agent && a.agentConfigDir == dir {
-                setStatus(a.id, .error("keychainDenied"))
+                setStatus(a.id, .error(AccountRegistry.keychainDenied))
             }
             throw ProviderError.credentialsDenied
         }
@@ -482,7 +476,7 @@ final class UsageStore: ObservableObject {
             guard let d = try await agentCredentials(p, configDir: dir) else { return .skipped(.stale) }
             data = d
         } catch ProviderError.credentialsDenied {
-            return .skipped(.error("keychainDenied"))
+            return .skipped(.error(AccountRegistry.keychainDenied))
         } catch {
             Log.error("\(account.id): agent credentials unreadable: \(error)")
             return .failed(.error("keychain"))

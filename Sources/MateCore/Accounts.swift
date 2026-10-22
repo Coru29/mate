@@ -96,6 +96,8 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     /// The id of the account of `identity` at `provider`; also the key of `SwitchHistory` and the aggregates' slices.
     /// Status of an agent-only account whose session ended (kept listed with its last data, never fetched).
     public static let noSession = "noSession"
+    /// Status of an agent-owned account whose keychain prompt the user denied (waits for an explicit retry).
+    public static let keychainDenied = "keychainDenied"
 
     public static func accountID(provider: ProviderID, identity: String) -> String { "\(provider.rawValue):\(identity)" }
 
@@ -178,13 +180,14 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
         return a
     }
 
-    /// Removes an account. Only a Mate-owned account has a Mate copy to drop.
+    /// Removes an account and returns Mate's copy of its credentials to drop: its own tokens when Mate owns it, the
+    /// shadow copy when the agent does. `agentOnly` providers (Mate keeps no copy) have nothing to drop. The agent's
+    /// own credentials are never part of it.
     @discardableResult
-    public mutating func remove(_ id: String) -> [OwnershipAction] {
+    public mutating func remove(_ id: String, agentOnly: Bool = false) -> [OwnershipAction] {
         guard let i = accounts.firstIndex(where: { $0.id == id }) else { return [] }
-        let owner = accounts[i].owner
         accounts.remove(at: i)
-        return owner == .mate ? [.dropMateCopy(accountID: id)] : []
+        return agentOnly ? [] : [.dropMateCopy(accountID: id)]
     }
 
     public func canRefresh(_ id: String) -> Bool {

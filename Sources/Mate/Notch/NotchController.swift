@@ -80,6 +80,7 @@ final class NotchController {
     private var showAlways = NotchPrefs.showPillAlways
     private var screenChoice = NotchPrefs.screenChoice
     private var notifications = NotchPrefs.systemNotifications
+    private var shownProviders = (NotchPrefs.providerOrder, NotchPrefs.disabledProviders)
     /// The panel shows the welcome guide's hint until it closes.
     private var showHint = false
 
@@ -129,6 +130,7 @@ final class NotchController {
     func openPanel(hint: Bool = false) {
         guard mode != .open, let info = screenInfo else { return }
         showHint = hint
+        resetSwipe()
         cancel(&openTimer)
         cancel(&closeTimer)
         if mode == .alert { removeAlertView() }
@@ -586,9 +588,11 @@ final class NotchController {
         if !event.momentumPhase.isEmpty { return true }
         // Trackpad gestures have precise deltas and a phase; a mouse wheel has neither.
         guard event.hasPreciseScrollingDeltas, !event.phase.isEmpty else { return true }
-        if event.phase == .began {
-            scrollAccumulated = 0
-            scrollStepped = false
+        if event.phase == .began { resetSwipe() }
+        // The end of a swipe resets too: a swipe that began outside the panel must not leave stale state.
+        if event.phase == .ended || event.phase == .cancelled {
+            resetSwipe()
+            return true
         }
         guard !scrollStepped, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return true }
         scrollAccumulated -= event.scrollingDeltaX
@@ -597,6 +601,11 @@ final class NotchController {
             scrollStepped = true
         }
         return true
+    }
+
+    private func resetSwipe() {
+        scrollAccumulated = 0
+        scrollStepped = false
     }
 
     // MARK: Notifications
@@ -651,8 +660,12 @@ final class NotchController {
             showAlways = always
             refreshClosedShape()
         }
-        // Provider order or enabled providers may have changed: the pill and an open panel follow.
-        queueRefresh()
+        // The pill and an open panel follow the provider order and the enabled providers.
+        let providers = (NotchPrefs.providerOrder, NotchPrefs.disabledProviders)
+        if providers != shownProviders {
+            shownProviders = providers
+            queueRefresh()
+        }
     }
 
     // MARK: Timers

@@ -124,9 +124,8 @@
 "Alertas por proveedor" = "Alertas por proveedor";
 "Apagado" = "Apagado";
 "Archivo" = "Archivo";
-"Arrastrá para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta." = "Arrastrá para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta.";
+"Arrastrá o usá las flechas para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta." = "Arrastrá o usá las flechas para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta.";
 "Atrás" = "Atrás";
-"Bienvenida a Mate" = "Bienvenida a Mate";
 "Bienvenido a Mate" = "Bienvenido a Mate";
 "Borrar" = "Borrar";
 "Borrar la clave" = "Borrar la clave";
@@ -226,3 +225,7 @@
 "«Agregar carpeta…» es para otra instancia de Codex con su propio CODEX_HOME." = "«Agregar carpeta…» es para otra instancia de Codex con su propio CODEX_HOME.";
 "¿Borrar la clave de Grok?" = "¿Borrar la clave de Grok?";
 "¿Borrar la cuenta %@?" = "¿Borrar la cuenta %@?";
+"Subir" = "Subir";
+"Bajar" = "Bajar";
+"Subir %@" = "Subir %@";
+"Bajar %@" = "Bajar %@";

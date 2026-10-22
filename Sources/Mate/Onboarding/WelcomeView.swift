@@ -120,7 +120,7 @@ private struct AgentsPage: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let detected = model.detected {
                 VStack(spacing: 0) {
-                    ForEach(Array(model.backend.providerOrder.filter { $0 != .grok }.enumerated()), id: \.element) { i, p in
+                    ForEach(Array(model.backend.providerOrder.filter { $0 != .grok && model.backend.isEnabled($0) }.enumerated()), id: \.element) { i, p in
                         if i > 0 { Divider() }
                         row(p, sessions: detected[p] ?? [])
                     }

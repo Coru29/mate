@@ -80,7 +80,7 @@ final class WelcomeWindowController: NSObject, NSWindowDelegate {
         model.startReading = { onStart() }
         let w = WelcomeWindow(contentRect: NSRect(origin: .zero, size: WelcomeView.size),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = String(localized: "Bienvenida a Mate")
+        w.title = String(localized: "Bienvenido a Mate")
         w.isReleasedWhenClosed = false
         w.collectionBehavior = [.moveToActiveSpace]
         w.contentView = NSHostingView(rootView: WelcomeView(model: model))

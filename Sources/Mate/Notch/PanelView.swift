@@ -88,7 +88,7 @@ struct PanelView: View {
     private func status(_ account: Account, now: Date) -> some View {
         let fetchedAt = store.snapshots[account.id]?.fetchedAt
         switch account.status {
-        case .error("keychainDenied"):
+        case .error(AccountRegistry.keychainDenied):
             HStack(spacing: 10) {
                 Text("Sin acceso al llavero")
                     .foregroundStyle(Tone.hot.color)

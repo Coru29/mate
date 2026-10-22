@@ -45,6 +45,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, closing === window else { return }
+        // Ends a rename in progress, which commits it.
+        closing.makeFirstResponder(nil)
         closing.delegate = nil
         window = nil
         navigation = nil

@@ -123,9 +123,8 @@
 "Alertas por proveedor" = "Alerts by provider";
 "Apagado" = "Off";
 "Archivo" = "File";
-"Arrastrá para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta." = "Drag to change the order in the panel. A provider that is off is neither shown nor checked.";
+"Arrastrá o usá las flechas para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta." = "Drag or use the arrows to change the order in the panel. A provider that is off is neither shown nor checked.";
 "Atrás" = "Back";
-"Bienvenida a Mate" = "Welcome to Mate";
 "Bienvenido a Mate" = "Welcome to Mate";
 "Borrar" = "Delete";
 "Borrar la clave" = "Delete Key";
@@ -225,3 +224,7 @@
 "«Agregar carpeta…» es para otra instancia de Codex con su propio CODEX_HOME." = "“Add Folder…” is for another Codex instance with its own CODEX_HOME.";
 "¿Borrar la clave de Grok?" = "Delete the Grok key?";
 "¿Borrar la cuenta %@?" = "Delete the account %@?";
+"Subir" = "Move Up";
+"Bajar" = "Move Down";
+"Subir %@" = "Move %@ up";
+"Bajar %@" = "Move %@ down";

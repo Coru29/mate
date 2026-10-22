@@ -15,20 +15,39 @@ struct AccountsView: View {
         let order = backend.providerOrder
         Form {
             Section {
-                ForEach(order, id: \.self) { p in
-                    Toggle(isOn: Binding(get: { backend.isEnabled(p) }, set: { backend.setEnabled(p, $0) })) {
+                ForEach(Array(order.enumerated()), id: \.element) { i, p in
+                    HStack(spacing: 8) {
                         Label {
                             Text(verbatim: p.displayName)
                         } icon: {
                             Image(systemName: p.symbolName)
                         }
+                        Spacer()
+                        // Buttons as well as drag: they always work and are reachable by keyboard and VoiceOver.
+                        Button { move(i, by: -1) } label: { Image(systemName: "chevron.up") }
+                            .disabled(i == 0)
+                            .help(Text("Subir"))
+                            .accessibilityLabel(Text("Subir \(p.displayName)"))
+                        Button { move(i, by: 1) } label: { Image(systemName: "chevron.down") }
+                            .disabled(i == order.count - 1)
+                            .help(Text("Bajar"))
+                            .accessibilityLabel(Text("Bajar \(p.displayName)"))
+                        Toggle(isOn: Binding(get: { backend.isEnabled(p) }, set: { backend.setEnabled(p, $0) })) {
+                            Text(verbatim: p.displayName)
+                        }
+                        .labelsHidden()
+                    }
+                    .buttonStyle(.borderless)
+                    .contextMenu {
+                        Button("Subir") { move(i, by: -1) }.disabled(i == 0)
+                        Button("Bajar") { move(i, by: 1) }.disabled(i == order.count - 1)
                     }
                 }
                 .onMove { backend.moveProviders(from: $0, to: $1) }
             } header: {
                 Text("Proveedores")
             } footer: {
-                Text("Arrastrá para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta.")
+                Text("Arrastrá o usá las flechas para cambiar el orden en el panel. Un proveedor apagado no se muestra ni se consulta.")
             }
             ForEach(order, id: \.self) { p in
                 providerSection(p)
@@ -49,7 +68,10 @@ struct AccountsView: View {
             }
             ForEach(accounts) { a in
                 AccountRow(account: a, store: store, fetchedAt: store.snapshots[a.id]?.fetchedAt,
-                           busy: busy != nil, signIn: { signIn(p) })
+                           busy: busy != nil, signIn: { signIn(p) }, delete: {
+                               // Grok's account is its stored key: delete both and reload Grok.
+                               if p == .grok { backend.deleteGrokKey() } else { store.removeAccount(a.id) }
+                           })
             }
             if p == .claude || p == .codex {
                 HStack {
@@ -88,6 +110,13 @@ struct AccountsView: View {
         case .grok: String(localized: "Se configura en la página Grok.")
         default: String(localized: "Sin cuentas. Mate suma la sesión de \(p.agentToolName) cuando aparece.")
         }
+    }
+
+    private func move(_ index: Int, by offset: Int) {
+        let target = index + offset
+        guard target >= 0, target < backend.providerOrder.count else { return }
+        // `move(fromOffsets:toOffset:)` counts the destination before removal.
+        backend.moveProviders(from: IndexSet(integer: index), to: offset > 0 ? target + 1 : target)
     }
 
     // MARK: Adding
@@ -146,6 +175,7 @@ private struct AccountRow: View {
     let fetchedAt: Date?
     let busy: Bool
     let signIn: () -> Void
+    let delete: () -> Void
     @State private var name = ""
     @State private var confirmDelete = false
     @FocusState private var editing: Bool
@@ -201,9 +231,10 @@ private struct AccountRow: View {
         }
         .opacity(account.hidden ? 0.6 : 1)
         .onAppear { name = account.name }
+        .onDisappear { if editing || name != account.name { commitName() } }
         .onChange(of: account.name) { _, new in if !editing { name = new } }
         .confirmationDialog(Text("¿Borrar la cuenta \(account.name)?"), isPresented: $confirmDelete) {
-            Button("Borrar", role: .destructive) { store.removeAccount(account.id) }
+            Button("Borrar", role: .destructive, action: delete)
             Button("Cancelar", role: .cancel) {}
         } message: {
             Text(verbatim: deleteMessage)
@@ -298,7 +329,7 @@ private struct AccountRow: View {
             }
             .font(.callout)
             .foregroundStyle(.secondary)
-        case .error("keychainDenied"):
+        case .error(AccountRegistry.keychainDenied):
             HStack(spacing: 6) {
                 Text("Sin acceso al llavero").foregroundStyle(.red)
                 Button("Reintentar") { store.refreshNow() }.controlSize(.small)

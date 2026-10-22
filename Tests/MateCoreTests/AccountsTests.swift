@@ -152,8 +152,17 @@ private func obs(_ identity: String, _ dir: String = "~/.claude", email: String?
     let agentOwned = r.remove("claude:a")
     let unknown = r.remove("claude:zzz")
     #expect(dropped == [.dropMateCopy(accountID: "claude:m")])
-    #expect(agentOwned.isEmpty)
+    // Mate keeps a shadow copy of an agent-owned account's credentials: deleting the account drops it too.
+    #expect(agentOwned == [.dropMateCopy(accountID: "claude:a")])
     #expect(unknown.isEmpty)
+    #expect(r.accounts.isEmpty)
+}
+
+@Test func removingAnAgentOnlyAccountHasNoCopyToDrop() {
+    var r = AccountRegistry()
+    _ = r.reconcile(provider: .cursor, observed: [ObservedSession(provider: .cursor, configDir: "cursor", identity: "c", email: nil)],
+                    scannedDirs: ["cursor"], agentOnly: true)
+    #expect(r.remove("cursor:c", agentOnly: true).isEmpty)
     #expect(r.accounts.isEmpty)
 }
 
