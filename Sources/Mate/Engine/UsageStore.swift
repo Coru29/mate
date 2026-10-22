@@ -328,6 +328,8 @@ final class UsageStore: ObservableObject {
     /// Next fetch of an account: its `FetchSchedule` date, or 5 s after the earliest window reset if sooner.
     private func due(_ a: Account, now: Date) -> Date {
         let s = fetchState[a.id] ?? FetchState()
+        // Never fetched: now (`FetchSchedule` counts a nil last success from `now`).
+        if s.lastAttempt == nil && s.failures == 0 { return now }
         var next = schedule.nextFetch(lastSuccess: s.lastAttempt, failures: s.failures,
                                       active: isActive(a.provider, now: now), panelOpen: panelOpen, now: now)
         if s.failures == 0, let reset = snapshots[a.id]?.windows.compactMap(\.resetsAt).filter({ $0 > now.addingTimeInterval(-5) }).min() {
