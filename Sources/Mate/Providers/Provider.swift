@@ -50,6 +50,9 @@ protocol Provider: AnyObject, Sendable {
     var extraConfigDirs: [String] { get set }
     /// Scripted providers (`--fake`) count as always active.
     var alwaysActive: Bool { get }
+    /// Accounts exist only while the agent's session does (Cursor, Gemini, Copilot, Grok): Mate keeps no copy of
+    /// their credentials, never refreshes them, and drops the account when the session goes away.
+    var agentOnly: Bool { get }
 
     func observeSessions() async -> SessionScan
     /// The agent's current credential blob for `configDir`, read fresh (nil when there is none).
@@ -72,6 +75,7 @@ protocol Provider: AnyObject, Sendable {
 extension Provider {
     func configDir(forLogFile path: String) -> String? { nil }
     var alwaysActive: Bool { false }
+    var agentOnly: Bool { false }
 
     /// Refreshes only an account Mate owns; an agent-owned account throws `.refreshNotAllowed` before any request.
     func refresh(_ tokens: OAuthTokens, accountID: String, registry: AccountRegistry) async throws -> OAuthTokens {

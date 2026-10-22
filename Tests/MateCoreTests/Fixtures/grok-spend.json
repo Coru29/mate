@@ -1,1 +1,1 @@
-{"spend":{"val":"1240"},"period":"2026-10"}
+{"coreInvoice":{"lines":[{"clusterName":"us-east-1","description":"grok-4 input tokens","unitType":"tokens","unitPrice":"300","numUnits":"1000","amount":"1240"}],"amountBeforeVat":"1240","vatCost":"0","amountAfterVat":"1240","totalWithCorr":{"val":"1240"},"prepaidCredits":{"val":"-4500"},"prepaidCreditsUsed":{"val":"0"}},"effectiveSpendingLimit":"10000","defaultCredits":"0","billingCycle":{"year":2026,"month":10}}

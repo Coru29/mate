@@ -78,6 +78,17 @@ enum Keychain {
         return attrs[kSecAttrAccount as String] as? String
     }
 
+    /// The account attributes of every item of `service` (attributes only, no prompt).
+    static func accountNames(service: String) -> [String] {
+        var query = base(service: service, account: nil)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitAll
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let items = out as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
+    }
+
     private static func base(service: String, account: String?) -> [String: Any] {
         var q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
         if let account { q[kSecAttrAccount as String] = account }

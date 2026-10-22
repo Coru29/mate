@@ -129,7 +129,8 @@ public enum CodexAuthFile {
     }
 }
 
-/// `~/.gemini/oauth_creds.json`. UNVERIFIED — confirm in Task 11: `{access_token, refresh_token, expiry_date(ms), id_token}`.
+/// `~/.gemini/oauth_creds.json`. UNVERIFIED (Gemini CLI is not installed on the build Mac):
+/// `{access_token, refresh_token, expiry_date(ms), id_token}`. Mate never refreshes it.
 public enum GeminiCredentials {
     public static func decode(_ data: Data) throws -> OAuthTokens {
         let o = try J.object(data)
@@ -140,19 +141,71 @@ public enum GeminiCredentials {
                            expiresAt: try J.double(o, "expiry_date").map { Date(timeIntervalSince1970: $0 / 1000) },
                            extra: extra)
     }
+
+    /// The Google account of the session (`sub` and `email` of the `id_token`), or nil when there is none.
+    /// Throws when the file is not valid JSON, so a half-written file is not taken as a logout.
+    public static func identity(from data: Data) throws -> (identity: String, email: String?)? {
+        let o = try J.object(data)
+        guard try J.string(o, "access_token") != nil, let id = try J.string(o, "id_token"),
+              let claims = JWT.claims(id), let sub = claims["sub"] as? String, !sub.isEmpty else { return nil }
+        return (sub, claims["email"] as? String)
+    }
 }
 
-/// GitHub Copilot's `apps.json`. UNVERIFIED — confirm in Task 13:
-/// `{"github.com:<client id>": {"user", "oauth_token"}}`; the first entry with an `oauth_token` wins.
+/// GitHub Copilot's token files in `~/.config/github-copilot` (or `$XDG_CONFIG_HOME/github-copilot`). Verified
+/// against @github/copilot-language-server 1.462.0: `apps.json` is `{"<host>:<app id>": {user, oauth_token,
+/// githubAppId}}`; the legacy `hosts.json` is `{"<host>": {user, oauth_token}}` (migrated into `apps.json`).
+/// Only `github.com` entries are used: their token goes to api.github.com, never an Enterprise host's.
 public enum CopilotCredentials {
     public static func decode(_ data: Data) throws -> OAuthTokens {
         let root = try J.object(data)
-        for key in root.keys.sorted() {
-            guard let entry = root[key] as? [String: Any], let token = try? J.string(entry, "oauth_token") else { continue }
+        for key in root.keys.sorted() where key == "github.com" || key.hasPrefix("github.com:") {
+            guard let entry = root[key] as? [String: Any], let token = try? J.string(entry, "oauth_token"),
+                  !token.isEmpty else { continue }
             var extra: [String: String] = [:]
             if let u = try? J.string(entry, "user") { extra["user"] = u }
             return OAuthTokens(accessToken: token, extra: extra)
         }
-        throw ParseError.malformed("no oauth_token entry")
+        throw ParseError.malformed("no github.com oauth_token entry")
+    }
+}
+
+/// The `gh` CLI's `hosts.yml`: only the `user:` of the `github.com` block is read (never a token).
+public enum GhHosts {
+    public static func user(fromYAML yaml: String) -> String? {
+        var inGitHub = false
+        for raw in yaml.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(raw)
+            if let first = line.first, first != " ", first != "\t", first != "#" {
+                inGitHub = line.trimmingCharacters(in: .whitespaces) == "github.com:"
+                continue
+            }
+            guard inGitHub else { continue }
+            // Direct children only (4 spaces in gh's own output; 2 tolerated), not the nested `users:` map.
+            let indent = line.prefix { $0 == " " }.count
+            let body = line.dropFirst(indent)
+            guard indent <= 4, body.hasPrefix("user:") else { continue }
+            var value = body.dropFirst("user:".count).trimmingCharacters(in: .whitespaces)
+            if value.count >= 2, let q = value.first, q == "\"" || q == "'", value.last == q {
+                value = String(value.dropFirst().dropLast())
+            }
+            return value.isEmpty ? nil : value
+        }
+        return nil
+    }
+}
+
+/// Cursor's session in `state.vscdb` (`cursorAuth/accessToken`, `cursorAuth/cachedEmail`). The identity is the
+/// token's JWT `sub` (stable across email changes), else the email.
+public enum CursorSession {
+    public static func identity(accessToken: String, email: String?) -> String? {
+        guard !accessToken.isEmpty else { return nil }
+        if let sub = JWT.claims(accessToken)?["sub"] as? String, !sub.isEmpty { return sub }
+        if let email, !email.isEmpty { return email }
+        return nil
+    }
+
+    public static func tokens(accessToken: String) -> OAuthTokens {
+        OAuthTokens(accessToken: accessToken, expiresAt: JWT.expiry(accessToken))
     }
 }

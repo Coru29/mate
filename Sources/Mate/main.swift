@@ -2,6 +2,7 @@ import AppKit
 
 MainActor.assumeIsolated {
     if DebugCLI.isIndex { DebugCLI.index() }
+    if let grok = DebugCLI.setGrok { DebugCLI.setGrok(team: grok.team, budget: grok.budget) }
     if let day = DebugCLI.dumpDay { DebugCLI.dumpDay(day) }
     if DebugCLI.isDump {
         Task { await DebugCLI.dump() }

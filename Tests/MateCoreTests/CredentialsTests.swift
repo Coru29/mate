@@ -114,6 +114,49 @@ func fixture(_ name: String) throws -> Data {
 }
 
 @Test func copilotDecodeSkipsBadEntry() throws {
-    let json = #"{"a":{"oauth_token":5},"b":{"oauth_token":"gho_OK"}}"#
+    let json = #"{"github.com:a":{"oauth_token":5},"github.com:b":{"oauth_token":"gho_OK"}}"#
     #expect(try CopilotCredentials.decode(Data(json.utf8)).accessToken == "gho_OK")
+}
+
+@Test func copilotDecodeOnlyTakesGitHubDotCom() throws {
+    // A GitHub Enterprise token must never be sent to api.github.com.
+    let json = #"{"ghe.example.com:Iv1.x":{"user":"corp","oauth_token":"gho_GHE"}}"#
+    #expect(throws: (any Error).self) { try CopilotCredentials.decode(Data(json.utf8)) }
+    let mixed = #"{"aaa.example.com:Iv1.x":{"user":"corp","oauth_token":"gho_GHE"},"github.com:Iv1.y":{"user":"me","oauth_token":"gho_OK"}}"#
+    #expect(try CopilotCredentials.decode(Data(mixed.utf8)).accessToken == "gho_OK")
+}
+
+@Test func copilotDecodeReadsLegacyHostsFile() throws {
+    let t = try CopilotCredentials.decode(fixture("copilot-hosts.json"))
+    #expect(t.accessToken == "gho_HOSTS")
+    #expect(t.extra["user"] == "hostuser")
+}
+
+@Test func ghHostsUserIsGitHubDotComOnly() throws {
+    let yaml = try #require(String(data: fixture("gh-hosts.yml"), encoding: .utf8))
+    #expect(GhHosts.user(fromYAML: yaml) == "testuser")
+    #expect(GhHosts.user(fromYAML: "ghe.example.com:\n    user: corp\n") == nil)
+    #expect(GhHosts.user(fromYAML: "github.com:\n    oauth_token: x\n    user: \"quoted\"\n") == "quoted")
+    #expect(GhHosts.user(fromYAML: "") == nil)
+}
+
+@Test func cursorIdentityFromTokenSubject() {
+    // {"sub":"auth0|user_TEST","exp":1792692000}
+    let token = "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhdXRoMHx1c2VyX1RFU1QiLCJleHAiOjE3OTI2OTIwMDB9.sig"
+    #expect(CursorSession.identity(accessToken: token, email: "me@example.com") == "auth0|user_TEST")
+    #expect(CursorSession.identity(accessToken: "opaque", email: "me@example.com") == "me@example.com")
+    #expect(CursorSession.identity(accessToken: "opaque", email: nil) == nil)
+    #expect(CursorSession.identity(accessToken: "", email: "me@example.com") == nil)
+    let t = CursorSession.tokens(accessToken: token)
+    #expect(t.expiresAt == Date(timeIntervalSince1970: 1_792_692_000))
+}
+
+@Test func geminiIdentityFromIdToken() throws {
+    // {"sub":"1234","email":"g@example.com"}
+    let creds = #"{"access_token":"ya29.x","id_token":"eyJhbGciOiJub25lIn0.eyJzdWIiOiIxMjM0IiwiZW1haWwiOiJnQGV4YW1wbGUuY29tIn0.sig"}"#
+    let id = try #require(try GeminiCredentials.identity(from: Data(creds.utf8)))
+    #expect(id.identity == "1234")
+    #expect(id.email == "g@example.com")
+    #expect(try GeminiCredentials.identity(from: Data(#"{"access_token":"ya29.x"}"#.utf8)) == nil)
+    #expect(throws: (any Error).self) { try GeminiCredentials.identity(from: Data("{".utf8)) }
 }

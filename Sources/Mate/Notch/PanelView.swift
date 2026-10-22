@@ -95,8 +95,25 @@ struct PanelView: View {
             if let fetchedAt, now.timeIntervalSince(fetchedAt) > FetchSchedule.idleInterval + 300 {
                 age(fetchedAt, now: now)
             }
+        case .error(let why) where fetchedAt == nil:
+            // A failing endpoint with no earlier data to fall back on.
+            Text("No disponible: \(Self.reason(why))")
+                .font(.system(size: 12))
+                .foregroundStyle(Tone.hot.color)
+                .fixedSize(horizontal: false, vertical: true)
         case .stale, .error:
             if let fetchedAt { age(fetchedAt, now: now) }
+        }
+    }
+
+    /// The readable form of an `AccountStatus.error` code (free text, such as "HTTP 503", passes through).
+    static func reason(_ code: String) -> String {
+        switch code {
+        case "rateLimited": String(localized: "demasiados pedidos, probá más tarde")
+        case "response": String(localized: "respuesta inesperada del servidor")
+        case "unauthorized": String(localized: "la sesión no es válida")
+        case "credentials", "keychain": String(localized: "no se pudo leer la sesión")
+        default: code
         }
     }
 

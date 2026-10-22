@@ -67,6 +67,17 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
     #expect(w[0].detail == "USD 5,23 a demanda")
 }
 
+@Test func cursorUsageWithoutPercentUsesIncludedSpend() throws {
+    // proto3 JSON: int64 as numbers or strings, zero fields omitted.
+    let w = try CursorUsage.windows(from: fixture("cursor-usage-no-percent.json"), now: now)
+    #expect(w == [LimitWindow(kind: .billingCycle, usedPercent: 25, resetsAt: at(1_793_491_200), duration: 31 * 86_400)])
+}
+
+@Test func cursorUsageWithoutPlanIsNoWindow() throws {
+    let json = #"{"billingCycleStart":"1790812800000","billingCycleEnd":"1793491200000","enabled":false}"#
+    #expect(try CursorUsage.windows(from: Data(json.utf8), now: now).isEmpty)
+}
+
 @Test func geminiQuotaWindows() throws {
     let w = try GeminiQuota.windows(from: fixture("gemini-quota.json"), now: now)
     #expect(w == [
@@ -79,6 +90,12 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
     let w = try CopilotUsage.windows(from: fixture("copilot-usage.json"), now: now)
     #expect(w == [LimitWindow(kind: .premiumRequests, usedPercent: 60, resetsAt: at(1_793_491_200),
                               duration: nil, detail: "180 de 300")])
+}
+
+@Test func copilotFreePlanUsesChatQuota() throws {
+    let w = try CopilotUsage.windows(from: fixture("copilot-usage-free.json"), now: now)
+    #expect(w == [LimitWindow(kind: .premiumRequests, usedPercent: 80, resetsAt: at(1_793_491_200),
+                              duration: nil, detail: "40 de 50")])
 }
 
 @Test func copilotUnlimitedIsNoWindow() throws {
@@ -95,15 +112,22 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
     #expect(throws: (any Error).self) { try GrokSpend.windows(from: fixture("grok-spend.json"), budget: 0, now: now) }
 }
 
+@Test func grokSpendFallsBackToTotalWithCorrection() throws {
+    let json = #"{"coreInvoice":{"totalWithCorr":{"val":"500"}},"billingCycle":{"year":2026,"month":10}}"#
+    let w = try GrokSpend.windows(from: Data(json.utf8), budget: 10, now: now)
+    #expect(w.map(\.usedPercent) == [50])
+    #expect(w[0].detail == "USD 5,00 de 10")
+}
+
 @Test func malformedResponsesThrowNotCrash() throws {
     let bad: [String] = ["{}", "[]", #"{"five_hour":{"utilization":"#, "", "null"]
     let wrongType: [String: String] = [
         "claude": #"{"five_hour":{"utilization":"high","resets_at":"2026-10-22T18:00:00Z"}}"#,
         "codex": #"{"rate_limit":{"primary_window":{"used_percent":"x"}}}"#,
-        "cursor": #"{"billingCycleEnd":5,"individualUsage":"x"}"#,
+        "cursor": #"{"billingCycleEnd":"1793491200000","planUsage":{"limit":"x"}}"#,
         "gemini": #"{"buckets":[{"modelId":"m","remainingFraction":"x"}]}"#,
         "copilot": #"{"quota_snapshots":{"premium_interactions":{"percent_remaining":"x"}}}"#,
-        "grok": #"{"spend":{"val":{"a":1}}}"#,
+        "grok": #"{"coreInvoice":{"amountBeforeVat":{"a":1}}}"#,
     ]
     func all(_ s: String) -> [() throws -> Any] {
         let d = Data(s.utf8)
@@ -135,7 +159,7 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
     #expect(throws: (any Error).self) { try CopilotUsage.windows(from: Data(copilot.utf8), now: now) }
     let claude = #"{"five_hour":{"utilization":1e300},"extra_usage":{"used_credits":1e300,"monthly_limit":1e30}}"#
     _ = try? ClaudeUsage.windows(from: Data(claude.utf8), now: now)
-    let grok = #"{"spend":{"val":"1e300"}}"#
+    let grok = #"{"coreInvoice":{"amountBeforeVat":"1e300"}}"#
     _ = try? GrokSpend.windows(from: Data(grok.utf8), budget: 1e30, now: now)
 }
 
@@ -175,4 +199,11 @@ private func at(_ t: TimeInterval) -> Date { Date(timeIntervalSince1970: t) }
                                               previous: previous, now: now)
     #expect(kept.refreshToken == "rt-old")
     #expect(throws: ParseError.self) { try ClaudeTokenResponse.tokens(from: Data(#"{"error":"invalid_grant"}"#.utf8), previous: previous, now: now) }
+}
+
+@Test func geminiProjectFromLoadCodeAssist() throws {
+    #expect(try GeminiQuota.project(fromLoadCodeAssist: Data(#"{"cloudaicompanionProject":"proj-1"}"#.utf8)) == "proj-1")
+    #expect(try GeminiQuota.project(fromLoadCodeAssist: Data(#"{"cloudaicompanionProject":{"id":"proj-2"}}"#.utf8)) == "proj-2")
+    #expect(try GeminiQuota.project(fromLoadCodeAssist: Data(#"{"currentTier":{"id":"free-tier"}}"#.utf8)) == nil)
+    #expect(throws: (any Error).self) { try GeminiQuota.project(fromLoadCodeAssist: Data("[]".utf8)) }
 }

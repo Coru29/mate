@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import MateCore
 
 /// Owns all app state: accounts (single-owner token rules from `AccountRegistry`), snapshots, samples, alerts,
@@ -39,6 +39,8 @@ final class UsageStore: ObservableObject {
     private var fetchTimer: Timer?
     private var activityTimer: Timer?
     private var watcher: FileWatcher?
+    private var activationObserver: NSObjectProtocol?
+    private var cursorFrontmost = false
     private var reconciling: Set<ProviderID> = []
     private var indexStarted: Set<ProviderID> = []
     private var firstRun = false
@@ -87,6 +89,7 @@ final class UsageStore: ObservableObject {
         }
         w.start()
         watcher = w
+        observeFrontmostApp()
         updateActivity()
         firstRun = indexer.isFirstRun
         Task {
@@ -139,10 +142,12 @@ final class UsageStore: ObservableObject {
             fetchTimer?.invalidate()
             fetchTimer = nil
             watcher?.stop()
+            frontmostChanged(nil)
             Log.info("paused")
             return
         }
         watcher?.start()
+        if activationObserver != nil { frontmostChanged(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) }
         for p in providers {
             indexer.index(p, paths: p.watchedPaths, fullScan: true, qos: .utility) { [weak self] events, cursors in
                 self?.ingest(events, cursors: cursors)
@@ -269,10 +274,12 @@ final class UsageStore: ObservableObject {
             let before = Dictionary(uniqueKeysWithValues: registry.accounts.map { ($0.id, ($0.owner, $0.agentConfigDir)) })
             let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs,
                                              sourceDirs: Set(configDirs[p.id.rawValue] ?? []))
+            if p.agentOnly { dropEndedSessions(p.id) }
             commitRegistry()
             recordSwitches(scan.sessions, provider: p.id)
             startIndexing(p)
-            for action in actions {
+            // Agent-only providers have no Mate copy to keep or drop.
+            for action in actions where !p.agentOnly {
                 switch action {
                 case .storeShadow(let id, let dir):
                     // Fetches keep the shadow current; here only new or changed ownership needs a copy right away.
@@ -292,7 +299,22 @@ final class UsageStore: ObservableObject {
             }
         } while reconcileAgain.contains(p.id)
         for waiter in reconcileWaiters.removeValue(forKey: p.id) ?? [] { waiter.resume() }
+        if p.id == .cursor && activationObserver != nil { frontmostChanged(NSWorkspace.shared.frontmostApplication?.bundleIdentifier) }
         scheduleFetches()
+    }
+
+    /// Accounts of an agent-only provider whose session ended (the registry handed them to Mate) are removed with
+    /// their data: there is nothing Mate could fetch them with.
+    private func dropEndedSessions(_ id: ProviderID) {
+        let ended = registry.accounts.filter { $0.provider == id && $0.owner == .mate }
+        guard !ended.isEmpty else { return }
+        for a in ended {
+            _ = registry.remove(a.id) // never acted on: the only "copy" (Grok's key) is the session itself
+            snapshots[a.id] = nil
+            fetchState[a.id] = nil
+            Log.info("\(a.id): session ended; account removed")
+        }
+        persistence.save("snapshots") { [unowned self] in snapshots }
     }
 
     private func recordSwitches(_ sessions: [ObservedSession], provider id: ProviderID) {
@@ -363,7 +385,7 @@ final class UsageStore: ObservableObject {
 
     private func fetch(_ id: String) async {
         guard let account = registry.accounts.first(where: { $0.id == id }), let p = provider(account.provider),
-              fetchState[id]?.inFlight != true else { return }
+              isEnabled(account.provider), fetchState[id]?.inFlight != true else { return }
         fetchState[id, default: FetchState()].inFlight = true
         let outcome = await (account.owner == .agent ? fetchAgentOwned(account, p) : fetchMateOwned(account, p))
         let now = Date()
@@ -402,8 +424,10 @@ final class UsageStore: ObservableObject {
             return .failed(.error("keychain"))
         }
         guard let tokens = try? p.decodeCredentials(data) else { return .failed(.error("credentials")) }
-        if isOtherAccountsCopy(data, of: account) { return .skipped(.stale) }
-        storeShadow(account.id, data: data, configDir: dir)
+        if !p.agentOnly {
+            if isOtherAccountsCopy(data, of: account) { return .skipped(.stale) }
+            storeShadow(account.id, data: data, configDir: dir)
+        }
         switch registry.refreshDecision(for: account.id, expiresAt: tokens.expiresAt, now: Date()) {
         case .stale: return .skipped(.stale)
         case .useAsIs, .refresh: break // `.refresh` never happens for an agent-owned account.
@@ -411,8 +435,9 @@ final class UsageStore: ObservableObject {
         do {
             return .success(try await p.fetchUsage(account: account, tokens: tokens))
         } catch ProviderError.unauthorized {
-            return .skipped(.stale) // FetchPolicy: always .markStale for agent-owned; the agent will refresh it
-
+            // FetchPolicy: always .markStale for agent-owned; the agent will refresh it. An agent-only session
+            // (often a key the user typed) says why instead.
+            return .skipped(p.agentOnly ? .error("unauthorized") : .stale)
         } catch {
             return .failed(Self.status(error))
         }
@@ -526,9 +551,12 @@ final class UsageStore: ObservableObject {
         return next
     }
 
-    /// Hidden accounts and expired Mate copies (they need a new login) are not fetched on a schedule.
+    /// Providers turned off in Settings (`disabledProviders`) are neither shown nor fetched.
+    private func isEnabled(_ p: ProviderID) -> Bool { !NotchPrefs.disabledProviders.contains(p.rawValue) }
+
+    /// Hidden accounts, disabled providers and expired Mate copies (they need a new login) are not fetched on a schedule.
     private func isSchedulable(_ a: Account) -> Bool {
-        !a.hidden && !(a.owner == .mate && a.status == .expired) && fetchState[a.id]?.inFlight != true
+        isEnabled(a.provider) && !a.hidden && !(a.owner == .mate && a.status == .expired) && fetchState[a.id]?.inFlight != true
     }
 
     private func scheduleFetches() {
@@ -573,6 +601,32 @@ final class UsageStore: ObservableObject {
             if !wasActive { scheduleFetches() }
         }
         updateActivity()
+    }
+
+    /// Cursor counts as active while it is the frontmost app (NSWorkspace notifications, no polling).
+    private func observeFrontmostApp() {
+        guard provider(.cursor) != nil, activationObserver == nil else { return }
+        let ws = NSWorkspace.shared
+        activationObserver = ws.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                               object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let bundleID = app?.bundleIdentifier
+            MainActor.assumeIsolated { self?.frontmostChanged(bundleID) }
+        }
+        frontmostChanged(ws.frontmostApplication?.bundleIdentifier)
+    }
+
+    private func frontmostChanged(_ bundleID: String?) {
+        // Without a Cursor account there is nothing to show for it.
+        let on = !isPaused && bundleID == CursorProvider.bundleID
+            && registry.accounts.contains { $0.provider == .cursor && !$0.hidden }
+        guard on != cursorFrontmost else { return }
+        cursorFrontmost = on
+        let now = Date()
+        let wasActive = isActive(.cursor, now: now)
+        activity.setFrontmostCursor(on, at: now)
+        updateActivity()
+        if on && !wasActive { scheduleFetches() }
     }
 
     private func updateActivity() {

@@ -10,6 +10,8 @@ public enum PrefKey: String, CaseIterable, Sendable {
     case disabledProviders
     case language
     case checkUpdates
+    /// Grok's monthly API budget in USD; 0 means not configured (Grok is not shown).
+    case grokMonthlyBudget
 }
 
 public enum Preferences {
@@ -25,5 +27,6 @@ public enum Preferences {
         PrefKey.disabledProviders.rawValue: [String](),
         PrefKey.language.rawValue: "system",
         PrefKey.checkUpdates.rawValue: true,
+        PrefKey.grokMonthlyBudget.rawValue: 0.0,
     ]
 }

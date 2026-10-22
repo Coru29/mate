@@ -1,0 +1,7 @@
+github.com:
+    users:
+        testuser:
+    git_protocol: https
+    user: testuser
+ghe.example.com:
+    user: corp

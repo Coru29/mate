@@ -7,7 +7,7 @@ import MateCore
 /// `--demo-alert` drops a sample alert.
 /// Accounts (until Settings exists): `--add-account claude|codex` runs that provider's sign-in, stores the account,
 /// fetches it once, prints it and exits; `--add-config-dir claude|codex <path>` adds a config-dir source, prints the
-/// provider's accounts and exits.
+/// provider's accounts and exits; `--set-grok <teamId> [<budget>]` stores a Grok management key read from stdin.
 @MainActor
 enum DebugCLI {
     static var isFake: Bool { CommandLine.arguments.contains("--fake") }
@@ -79,6 +79,38 @@ enum DebugCLI {
             print("could not add the folder: \((error as? LocalizedError)?.errorDescription ?? String(describing: error))")
             exit(1)
         }
+    }
+
+    /// `--set-grok <teamId> [<budget USD>]`: the team id (and optionally the monthly budget).
+    static var setGrok: (team: String, budget: Double?)? {
+        guard CommandLine.arguments.contains("--set-grok") else { return nil }
+        guard let team = value(after: "--set-grok"), !team.hasPrefix("--"), !team.isEmpty else {
+            print("usage: echo -n <management key> | Mate --set-grok <teamId> [<monthly budget USD>]")
+            exit(2)
+        }
+        let budget = value(after: "--set-grok", offset: 2).flatMap { Double($0.replacingOccurrences(of: ",", with: ".")) }
+        return (team, budget)
+    }
+
+    /// Runs `--set-grok`: reads the management key from stdin (never echoed or logged), stores it in Mate's keychain
+    /// for the team, sets the budget when given, and exits.
+    static func setGrok(team: String, budget: Double?) -> Never {
+        let input = FileHandle.standardInput.readDataToEndOfFile()
+        let key = String(decoding: input, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { print("no key on stdin"); exit(2) }
+        do {
+            try GrokProvider.setKey(key, teamID: team)
+        } catch {
+            print("could not store the key: \(error)")
+            exit(1)
+        }
+        if let budget {
+            guard budget >= 0, budget.isFinite else { print("bad budget"); exit(2) }
+            UserDefaults.mate.set(budget, forKey: PrefKey.grokMonthlyBudget.rawValue)
+        }
+        let b = GrokProvider.budget
+        print("grok key stored for team \(team); monthly budget \(b > 0 ? "USD \(b)" : "not set (Grok stays hidden until it is)")")
+        exit(0)
     }
 
     /// `--dump --day YYYY-MM-DD`: the day to print per-provider/per-model totals for (log reading only).
@@ -154,7 +186,8 @@ enum DebugCLI {
 
     static func makeStore() -> UsageStore {
         let fake = isFake
-        let providers: [any Provider] = fake ? [FakeProvider()] : [ClaudeProvider(), CodexProvider()]
+        let providers: [any Provider] = fake ? [FakeProvider()]
+            : [ClaudeProvider(), CodexProvider(), CursorProvider(), GeminiProvider(), CopilotProvider(), GrokProvider()]
         let vault: TokenVault = fake ? MemoryVault() : KeychainVault()
         return UsageStore(providers: providers, vault: vault, persistence: Persistence(dir: Persistence.defaultDir(fake: fake)))
     }

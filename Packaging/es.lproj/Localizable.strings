@@ -98,3 +98,10 @@
 "Listo, ya podés volver a Mate" = "Listo, ya podés volver a Mate";
 "desde el log" = "desde el log";
 "Anthropic no aceptó ese código. Abrí el navegador de nuevo y pegá el código nuevo." = "Anthropic no aceptó ese código. Abrí el navegador de nuevo y pegá el código nuevo.";
+"No disponible: %@" = "No disponible: %@";
+"demasiados pedidos, probá más tarde" = "demasiados pedidos, probá más tarde";
+"respuesta inesperada del servidor" = "respuesta inesperada del servidor";
+"la sesión no es válida" = "la sesión no es válida";
+"no se pudo leer la sesión" = "no se pudo leer la sesión";
+"sin proyecto de Code Assist" = "sin proyecto de Code Assist";
+"sin presupuesto" = "sin presupuesto";
