@@ -7,13 +7,17 @@ enum KeychainError: Error, CustomStringConvertible {
     /// `/usr/bin/security` exit status.
     case tool(Int32)
     case timedOut
+    /// A name `security -i` cannot take verbatim (quote, backslash, line break).
+    case unsupportedName
+    /// What `security` stored did not read back equal, or a chunk is missing.
+    case mismatch
 
     /// The user denied (or could not be asked through) the access prompt.
     var isDenied: Bool {
         switch self {
         case .status(let s): s == errSecUserCanceled || s == errSecAuthFailed || s == errSecInteractionNotAllowed
         case .tool(let s): SecurityCommand.exit(s) == .denied
-        case .timedOut: false
+        case .timedOut, .unsupportedName, .mismatch: false
         }
     }
 
@@ -24,6 +28,8 @@ enum KeychainError: Error, CustomStringConvertible {
             return "keychain error \(s) (\(text))"
         case .tool(let s): return "security exited with \(s)"
         case .timedOut: return "security timed out"
+        case .unsupportedName: return "name not accepted by security"
+        case .mismatch: return "keychain value incomplete or not read back equal"
         }
     }
 }
@@ -57,68 +63,149 @@ enum Keychain {
 
     // MARK: Mate's own items
 
-    /// Mate's item, or nil when it does not exist. Items an earlier Mate wrote in process are read in process (macOS
-    /// may ask one last time) and rewritten through `security`.
+    /// Mate's value, or nil when it does not exist. Items an earlier Mate wrote in process are read in process (macOS
+    /// may ask one last time) and moved to `security`-written items.
     static func read(service: String, account: String) throws -> Data? {
         try lock.withLock {
-            switch try plan(service: service, account: account) {
+            switch try state(service: service, account: account) {
             case .missing:
                 return nil
-            case .tool:
-                let r = try SecurityTool.run(SecurityCommand.findArguments(service: service, account: account), timeout: ownTimeout)
-                switch SecurityCommand.exit(r.status) {
-                case .ok:
-                    guard let data = SecurityCommand.decodeOwn(r.output) else { throw KeychainError.status(errSecDecode) }
-                    return data
-                case .notFound: return nil
-                case .denied, .failed: throw KeychainError.tool(r.status)
-                }
+            case .tool(let head):
+                return try toolRead(service: service, account: account, head: head)
             case .legacy:
                 guard let data = try legacyRead(service: service, account: account) else { return nil }
-                if SecurityCommand.addLine(service: service, account: account, data: data) != nil {
-                    do {
-                        try writeUnlocked(service: service, account: account, data: data, current: .legacy)
-                        Log.info("keychain: moved \(service) item to the security tool")
-                    } catch {
-                        Log.error("keychain: could not move \(service) item: \(error)")
-                    }
+                do {
+                    try replaceLegacy(service: service, account: account, data: data, old: data)
+                    Log.info("keychain: moved \(service) item to the security tool")
+                } catch {
+                    Log.error("keychain: could not move \(service) item, kept as it was: \(error)")
                 }
                 return data
             }
         }
     }
 
-    /// Creates or replaces Mate's own item.
+    /// Creates or replaces Mate's value. The previous value is removed only after the new one reads back equal; on
+    /// any failure the previous value is kept (or put back) and the error is rethrown.
     static func write(service: String, account: String, data: Data) throws {
         try lock.withLock {
-            try writeUnlocked(service: service, account: account, data: data, current: try plan(service: service, account: account))
-        }
-    }
-
-    /// Deletes Mate's own item; deleting a missing item is not an error.
-    static func delete(service: String, account: String) throws {
-        try lock.withLock {
-            switch try plan(service: service, account: account) {
-            case .missing: return
-            case .tool: try toolDelete(service: service, account: account)
-            case .legacy: try legacyDelete(service: service, account: account)
+            switch try state(service: service, account: account) {
+            case .missing, .tool:
+                try toolWrite(service: service, account: account, data: data)
+            case .legacy:
+                // Read so it can be put back if the move fails (macOS may ask; it is the item's last in-process read).
+                let old = try? legacyRead(service: service, account: account)
+                try replaceLegacy(service: service, account: account, data: data, old: old)
             }
         }
     }
 
-    private static func writeUnlocked(service: String, account: String, data: Data, current: OwnKeychainItem) throws {
-        guard let line = SecurityCommand.addLine(service: service, account: account, data: data) else {
-            // Too long for one `security -i` line: kept in process, which asks again after an update.
-            Log.error("keychain: \(service) item too long for the security tool; stored in process")
-            if current == .tool { try toolDelete(service: service, account: account) }
-            try legacyWrite(service: service, account: account, data: data)
-            return
+    /// Deletes Mate's value and all its chunks; deleting a missing value is not an error.
+    static func delete(service: String, account: String) throws {
+        try lock.withLock {
+            if case .legacy = try state(service: service, account: account) {
+                try legacyDelete(service: service, account: account)
+            }
+            try toolDeleteAll(service: service, account: account)
         }
-        // `security` may not update an item Mate created in process (its partition is the old build's), and Mate
-        // may delete it: replace it.
-        if current == .legacy { try legacyDelete(service: service, account: account) }
+    }
+
+    private enum State {
+        case missing, legacy
+        case tool(OwnItemLayout.Head)
+    }
+
+    /// From the head item's attributes (never prompts).
+    private static func state(service: String, account: String) throws -> State {
+        var query = base(service: service, account: account)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &out)
+        if status == errSecItemNotFound { return .missing }
+        guard status == errSecSuccess else { throw KeychainError.status(status) }
+        let comment = (out as? [String: Any])?[kSecAttrComment as String] as? String
+        return OwnItemLayout.head(comment: comment).map(State.tool) ?? .legacy
+    }
+
+    /// A security-tool item cannot share its name with the in-process one, so the old item goes first; if the new
+    /// value does not land whole, the partial items are removed and the old item is put back.
+    private static func replaceLegacy(service: String, account: String, data: Data, old: Data?) throws {
+        guard OwnItemLayout.parts(service: service, account: account, data: data, generation: "check") != nil else {
+            throw KeychainError.unsupportedName
+        }
+        try legacyDelete(service: service, account: account)
+        do {
+            try toolWrite(service: service, account: account, data: data)
+        } catch {
+            try? toolDeleteAll(service: service, account: account)
+            if let old {
+                do { try legacyWrite(service: service, account: account, data: old) } catch {
+                    Log.error("keychain: could not put back the \(service) item: \(error)")
+                }
+            }
+            throw error
+        }
+    }
+
+    /// Chunks first, each read back; then the head, the atomic switch; then the previous value's chunks are dropped.
+    private static func toolWrite(service: String, account: String, data: Data) throws {
+        let generation = String(UInt32.random(in: .min ... .max), radix: 36)
+        guard let parts = OwnItemLayout.parts(service: service, account: account, data: data, generation: generation),
+              let head = parts.last else { throw KeychainError.unsupportedName }
+        let chunks = parts.dropLast()
+        do {
+            for part in chunks { try toolAddVerified(service: service, part) }
+        } catch {
+            // The head still names the previous chunks: the previous value is untouched.
+            for part in chunks { try? toolDelete(service: service, account: part.account) }
+            throw error
+        }
+        // A failed or timed-out head write may still have landed, so both generations' chunks stay: whichever head
+        // is stored reads whole. A later successful write drops the stale ones.
+        try toolAddVerified(service: service, head)
+        let current = Set(chunks.map(\.account))
+        for name in accountNames(service: service) where OwnItemLayout.isChunk(name, of: account) && !current.contains(name) {
+            do { try toolDelete(service: service, account: name) } catch {
+                Log.error("keychain: could not drop a stale \(service) chunk: \(error)")
+            }
+        }
+    }
+
+    private static func toolAddVerified(service: String, _ part: OwnItemPart) throws {
+        guard let line = SecurityCommand.addLine(service: service, account: part.account, comment: part.comment, data: part.data)
+        else { throw KeychainError.unsupportedName }
         let r = try SecurityTool.run(["-i"], input: Data(line.utf8), timeout: ownTimeout)
         guard r.status == 0 else { throw KeychainError.tool(r.status) }
+        guard try toolReadOne(service: service, account: part.account) == part.data else { throw KeychainError.mismatch }
+    }
+
+    private static func toolRead(service: String, account: String, head: OwnItemLayout.Head) throws -> Data? {
+        guard let first = try toolReadOne(service: service, account: account) else { return nil }
+        let chunks = try OwnItemLayout.chunkAccounts(head, of: account).map { name -> Data in
+            guard let chunk = try toolReadOne(service: service, account: name) else { throw KeychainError.mismatch }
+            return chunk
+        }
+        return OwnItemLayout.join(head: first, chunks: chunks)
+    }
+
+    private static func toolReadOne(service: String, account: String) throws -> Data? {
+        let r = try SecurityTool.run(SecurityCommand.findArguments(service: service, account: account), timeout: ownTimeout)
+        switch SecurityCommand.exit(r.status) {
+        case .ok:
+            guard let data = SecurityCommand.decodeOwn(r.output) else { throw KeychainError.status(errSecDecode) }
+            return data
+        case .notFound: return nil
+        case .denied, .failed: throw KeychainError.tool(r.status)
+        }
+    }
+
+    /// The head and every chunk of `account`.
+    private static func toolDeleteAll(service: String, account: String) throws {
+        for name in accountNames(service: service) where OwnItemLayout.isChunk(name, of: account) {
+            try toolDelete(service: service, account: name)
+        }
+        if case .tool = try state(service: service, account: account) { try toolDelete(service: service, account: account) }
     }
 
     /// Mate cannot delete an item `security` created (errSecInvalidOwnerEdit); `security` can.
@@ -128,18 +215,6 @@ enum Keychain {
         case .ok, .notFound: return
         case .denied, .failed: throw KeychainError.tool(r.status)
         }
-    }
-
-    private static func plan(service: String, account: String) throws -> OwnKeychainItem {
-        var query = base(service: service, account: account)
-        query[kSecReturnAttributes as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &out)
-        if status == errSecItemNotFound { return .missing }
-        guard status == errSecSuccess else { throw KeychainError.status(status) }
-        let comment = (out as? [String: Any])?[kSecAttrComment as String] as? String
-        return OwnKeychainItem.plan(comment: comment, exists: true)
     }
 
     // MARK: In process (items written by earlier Mate builds)
@@ -215,6 +290,10 @@ protocol TokenVault: AnyObject {
 /// read or wrote once is kept in memory: repeated reads (every fetch compares copies) do not run `security` again.
 final class KeychainVault: TokenVault {
     static func service(_ p: ProviderID) -> String { "io.github.coru29.Mate.\(p.rawValue)" }
+    /// One instance, so every reader (the store, Grok's key) shares the cache.
+    static let shared = KeychainVault()
+
+    private init() {}
 
     private let lock = NSLock()
     private var cache: [String: Data] = [:]

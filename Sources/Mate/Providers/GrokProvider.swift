@@ -25,35 +25,39 @@ final class GrokProvider: Provider, @unchecked Sendable {
 
     static func accountID(teamID: String) -> String { AccountRegistry.accountID(provider: .grok, identity: teamID) }
 
+    /// The stored keys' account names (attributes only), without the chunk items of a long value.
+    private static var keyNames: [String] { Keychain.accountNames(service: service).filter { !$0.contains("#") } }
+
+    /// Mate's own items, through the shared cached vault.
+    private static var vault: KeychainVault { .shared }
+
     /// Stores the key for `teamID`, replacing any other team's (one Grok team at a time).
     static func setKey(_ key: String, teamID: String) throws {
         let account = accountID(teamID: teamID)
-        for other in Keychain.accountNames(service: service) where other != account {
-            try Keychain.delete(service: service, account: other)
-        }
-        try Keychain.write(service: service, account: account, data: Data(key.utf8))
+        for other in keyNames where other != account { try vault.delete(.grok, accountID: other) }
+        try vault.write(.grok, accountID: account, data: Data(key.utf8))
     }
 
     /// The team whose key is stored, from the item's attributes (the key itself is not read).
     static var storedTeamID: String? {
         let prefix = ProviderID.grok.rawValue + ":"
-        return Keychain.accountNames(service: service).first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+        return keyNames.first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
     }
 
     /// Deletes every stored Grok key (Mate's own items).
     static func deleteKeys() throws {
-        for name in Keychain.accountNames(service: service) { try Keychain.delete(service: service, account: name) }
+        for name in keyNames { try vault.delete(.grok, accountID: name) }
     }
 
     func accountRemoved(_ account: Account) throws {
-        try Keychain.delete(service: Self.service, account: account.id)
+        try Self.vault.delete(.grok, accountID: account.id)
     }
 
     func observeSessions() async -> SessionScan {
         let dir = Self.sessionDir
         guard Self.budget > 0 else { return SessionScan(sessions: [], scannedDirs: [dir]) }
         let prefix = ProviderID.grok.rawValue + ":"
-        let sessions = Keychain.accountNames(service: Self.service).compactMap { name -> ObservedSession? in
+        let sessions = Self.keyNames.compactMap { name -> ObservedSession? in
             guard name.hasPrefix(prefix), name.count > prefix.count else { return nil }
             return ObservedSession(provider: .grok, configDir: dir, identity: String(name.dropFirst(prefix.count)), email: nil)
         }
@@ -64,8 +68,8 @@ final class GrokProvider: Provider, @unchecked Sendable {
     func agentCredentials(configDir: String) async throws -> Data? {
         guard configDir == Self.sessionDir else { return nil }
         let prefix = ProviderID.grok.rawValue + ":"
-        guard let name = Keychain.accountNames(service: Self.service).first(where: { $0.hasPrefix(prefix) }) else { return nil }
-        guard let key = try Keychain.read(service: Self.service, account: name) else { return nil }
+        guard let name = Self.keyNames.first(where: { $0.hasPrefix(prefix) }) else { return nil }
+        guard let key = try Self.vault.read(.grok, accountID: name) else { return nil }
         // Carry the team id with the key so a fetch never pairs one team's key with another team's id.
         return try JSONSerialization.data(withJSONObject: ["key": String(decoding: key, as: UTF8.self),
                                                            "team": String(name.dropFirst(prefix.count))])

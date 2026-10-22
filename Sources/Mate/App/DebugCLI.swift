@@ -191,7 +191,7 @@ enum DebugCLI {
         let fake = isFake
         let providers: [any Provider] = fake ? [FakeProvider()]
             : [ClaudeProvider(), CodexProvider(), CursorProvider(), GeminiProvider(), CopilotProvider(), GrokProvider()]
-        let vault: TokenVault = fake ? MemoryVault() : KeychainVault()
+        let vault: TokenVault = fake ? MemoryVault() : KeychainVault.shared
         return UsageStore(providers: providers, vault: vault, persistence: Persistence(dir: Persistence.defaultDir(fake: fake)))
     }
 

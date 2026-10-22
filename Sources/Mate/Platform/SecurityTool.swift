@@ -38,12 +38,17 @@ enum SecurityTool {
             try? w.close()
         }
         if exited.wait(timeout: .now() + timeout) == .timedOut {
+            // SIGTERM, then SIGKILL after a second; every wait is bounded.
             p.terminate()
-            exited.wait()
-            reader.wait()
+            if exited.wait(timeout: .now() + 1) == .timedOut {
+                kill(p.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 1)
+            }
+            _ = reader.wait(timeout: .now() + 1)
             throw KeychainError.timedOut
         }
-        reader.wait()
+        // The pipe closes when `security` exits; `output` is only touched once the reader is done.
+        guard reader.wait(timeout: .now() + 1) == .success else { throw KeychainError.timedOut }
         return Result(status: p.terminationStatus, output: output)
     }
 }
