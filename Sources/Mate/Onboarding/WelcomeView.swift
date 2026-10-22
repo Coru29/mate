@@ -171,7 +171,7 @@ private struct KeychainPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             PageHeader(symbol: "key.fill", tint: .orange, title: Text("El aviso del llavero"))
-            Text("Claude Code guarda su sesión en el llavero de macOS. Para leerla, macOS te va a mostrar un aviso: «Mate quiere acceder a … en tu llavero».")
+            Text("Claude Code guarda su sesión en el llavero de macOS. Mate la lee con «security», la herramienta de Apple, así que si macOS pregunta, el aviso dice «security quiere usar tu información confidencial…».")
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 12) {
                 Image(systemName: "hand.tap.fill")

@@ -133,7 +133,7 @@
 "Buscar actualizaciones automáticamente" = "Check for updates automatically";
 "Carpeta %@" = "Folder %@";
 "Cerrar" = "Close";
-"Claude Code guarda su sesión en el llavero de macOS. Para leerla, macOS te va a mostrar un aviso: «Mate quiere acceder a … en tu llavero»." = "Claude Code keeps its session in the macOS keychain. To read it, macOS will show you a prompt: “Mate wants to access … in your keychain”.";
+"Claude Code guarda su sesión en el llavero de macOS. Mate la lee con «security», la herramienta de Apple, así que si macOS pregunta, el aviso dice «security quiere usar tu información confidencial…»." = "Claude Code keeps its session in the macOS keychain. Mate reads it with Apple’s “security” tool, so if macOS asks, the prompt says “security wants to use your confidential information…”.";
 "Clave de la API de xAI" = "xAI API key";
 "Clave guardada para el equipo %@." = "Key saved for team %@.";
 "Color %lld" = "Color %lld";

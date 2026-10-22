@@ -74,7 +74,7 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
 
     func agentCredentials(configDir: String) async throws -> Data? {
         do {
-            if let data = try Keychain.read(service: keychainService(configDir), account: nil) { return data }
+            if let data = try Keychain.readForeign(service: keychainService(configDir), account: nil) { return data }
         } catch let e as KeychainError where e.isDenied {
             throw ProviderError.credentialsDenied
         }
