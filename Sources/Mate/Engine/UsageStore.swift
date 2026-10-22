@@ -381,17 +381,24 @@ final class UsageStore: ObservableObject {
     }
 
     /// Renames old Codex accounts (`codex:<accountId>`) to their user's new id (`codex:<accountId>:<userId>`) once
-    /// that identity is seen: in the agent's session or in Mate's own copy of a Mate-owned account. Everything keyed
-    /// by the id moves with it: Mate's copy, snapshot, samples, switch history, alert state and token slices.
+    /// that identity is known: from the account's own copy whenever it has one (whatever its owner), else from the
+    /// agent's session. Everything keyed by the id moves with it: Mate's copy, snapshot, samples, switch history,
+    /// alert state and token slices.
     private func migrateCodexIDs(_ sessions: [ObservedSession]) {
-        var identities = sessions.filter { $0.provider == .codex }.map(\.identity)
-        for a in registry.accounts where a.provider == .codex && a.owner == .mate
-            && CodexIdentity.legacyIdentity(of: a.identity) == nil {
-            if let data = try? vault.read(.codex, accountID: a.id), let s = try? CodexAuthFile.session(from: data) {
-                identities.append(s.identity)
+        var copyIdentities: [String: String] = [:]
+        var withCopy = Set<String>()
+        for a in registry.accounts where a.provider == .codex && CodexIdentity.legacyIdentity(of: a.identity) == nil {
+            do {
+                guard let data = try vault.read(.codex, accountID: a.id) else { continue }
+                withCopy.insert(a.id)
+                if let s = try? CodexAuthFile.session(from: data) { copyIdentities[a.id] = s.identity }
+            } catch {
+                withCopy.insert(a.id) // unreadable now: never handed to a session's user
             }
         }
-        let renames = CodexAccountMigration.renames(newIdentities: identities, existingIDs: Set(registry.accounts.map(\.id)))
+        let renames = CodexAccountMigration.renames(existingIDs: Set(registry.accounts.map(\.id)),
+                                                    copyIdentities: copyIdentities, accountsWithCopy: withCopy,
+                                                    sessionIdentities: sessions.filter { $0.provider == .codex }.map(\.identity))
         guard !renames.isEmpty else { return }
         for r in renames {
             // Mate's copy first: if it cannot move, the account keeps its old id (and its copy) for now.

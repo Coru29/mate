@@ -8,18 +8,28 @@ private func codex(_ identity: String, owner: TokenOwner = .agent) -> Account {
 }
 
 @Test func oldCodexIDIsRenamedToTheSessionsNewID() {
-    let r = CodexAccountMigration.renames(newIdentities: ["acct-1:user-1"], existingIDs: ["codex:acct-1"])
+    let r = CodexAccountMigration.renames(existingIDs: ["codex:acct-1"], sessionIdentities: ["acct-1:user-1"])
     #expect(r == [CodexAccountMigration.Rename(from: "codex:acct-1", to: "codex:acct-1:user-1", identity: "acct-1:user-1")])
 }
 
 @Test func codexRenameNeedsTheOldAndNotTheNewAccount() {
-    #expect(CodexAccountMigration.renames(newIdentities: ["acct-1:user-1"], existingIDs: []).isEmpty)
-    #expect(CodexAccountMigration.renames(newIdentities: ["acct-1:user-1"],
-                                         existingIDs: ["codex:acct-1", "codex:acct-1:user-1"]).isEmpty)
-    #expect(CodexAccountMigration.renames(newIdentities: ["acct-1"], existingIDs: ["codex:acct-1"]).isEmpty)
+    #expect(CodexAccountMigration.renames(existingIDs: [], sessionIdentities: ["acct-1:user-1"]).isEmpty)
+    #expect(CodexAccountMigration.renames(existingIDs: ["codex:acct-1", "codex:acct-1:user-1"],
+                                         sessionIdentities: ["acct-1:user-1"]).isEmpty)
+    #expect(CodexAccountMigration.renames(existingIDs: ["codex:acct-1"], sessionIdentities: ["acct-1"]).isEmpty)
     // Two users of the old merged account: only the first one seen takes it over.
-    let two = CodexAccountMigration.renames(newIdentities: ["acct-1:u1", "acct-1:u2"], existingIDs: ["codex:acct-1"])
+    let two = CodexAccountMigration.renames(existingIDs: ["codex:acct-1"], sessionIdentities: ["acct-1:u1", "acct-1:u2"])
     #expect(two.map(\.to) == ["codex:acct-1:u1"])
+}
+
+/// An old account's own copy says whose it is: the session's user (another one) never takes it over.
+@Test func oldCodexAccountFollowsItsOwnCopy() {
+    let r = CodexAccountMigration.renames(existingIDs: ["codex:acct"], copyIdentities: ["codex:acct": "acct:user1"],
+                                          accountsWithCopy: ["codex:acct"], sessionIdentities: ["acct:user2"])
+    #expect(r == [CodexAccountMigration.Rename(from: "codex:acct", to: "codex:acct:user1", identity: "acct:user1")])
+    // A copy that names no user (or could not be read) keeps the old id; the session does not claim it either.
+    #expect(CodexAccountMigration.renames(existingIDs: ["codex:acct"], copyIdentities: [:],
+                                         accountsWithCopy: ["codex:acct"], sessionIdentities: ["acct:user2"]).isEmpty)
 }
 
 @Test func registryRenamesAnAccountInPlace() {

@@ -15,18 +15,25 @@ public enum CodexAccountMigration {
         }
     }
 
-    /// One rename per old account whose new identity is among `newIdentities`, when the old id exists and the new
-    /// one does not. The first identity seen takes an old account over; a second user of it starts fresh.
-    public static func renames(newIdentities: [String], existingIDs: Set<String>) -> [Rename] {
+    /// One rename per old account, when the old id exists and the new one does not. An old account with a copy of
+    /// its own (`accountsWithCopy`, including copies that could not be read) follows only that copy's identity
+    /// (`copyIdentities`, old id → identity); one without a copy is taken over by the first session identity of
+    /// its workspace. A second user of it starts fresh.
+    public static func renames(existingIDs: Set<String>, copyIdentities: [String: String] = [:],
+                               accountsWithCopy: Set<String> = [], sessionIdentities: [String]) -> [Rename] {
         var out: [Rename] = []
         var taken = Set<String>()
-        for identity in newIdentities {
-            guard let legacy = CodexIdentity.legacyIdentity(of: identity) else { continue }
+        func consider(_ identity: String, from required: String?) {
+            guard let legacy = CodexIdentity.legacyIdentity(of: identity) else { return }
             let from = AccountRegistry.accountID(provider: .codex, identity: legacy)
             let to = AccountRegistry.accountID(provider: .codex, identity: identity)
-            guard existingIDs.contains(from), !existingIDs.contains(to), taken.insert(from).inserted else { continue }
+            guard required.map({ $0 == from }) ?? !accountsWithCopy.contains(from),
+                  existingIDs.contains(from), !existingIDs.contains(to), !out.contains(where: { $0.to == to }),
+                  taken.insert(from).inserted else { return }
             out.append(Rename(from: from, to: to, identity: identity))
         }
+        for (id, identity) in copyIdentities.sorted(by: { $0.key < $1.key }) { consider(identity, from: id) }
+        for identity in sessionIdentities { consider(identity, from: nil) }
         return out
     }
 }
