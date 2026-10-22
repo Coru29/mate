@@ -35,6 +35,10 @@ final class NotchController {
     private var fakeNotch = false
     private var menuBarVisible = true
     private var pillShown = false
+    /// The pill view is on screen (not faded out); it hides while the panel or an alert is open.
+    private var pillVisible = false
+    /// `--snapshot-anim`: hides the pill as if it had no reason to show, to check interrupted hides.
+    private var debugHidePill = false
     /// The pill shows a weekly window instead of the session, with a tag (and a wider shape).
     private var pillTagged = false
 
@@ -47,6 +51,8 @@ final class NotchController {
     /// Target of the black shape, in screen coordinates.
     private var shapeRect = CGRect.zero
     private var shapeRadius = closedRadius
+    /// Target of the pill's ear (the black part right of the notch), in screen coordinates; nil when not drawn.
+    private var earRect: CGRect?
     private var panelRect = CGRect.zero
     private var alertRect = CGRect.zero
     /// Bumped by every shape transition, so a superseded animation's completion does nothing.
@@ -123,7 +129,9 @@ final class NotchController {
         panelView = container
         root.content.addSubview(container, positioned: .below, relativeTo: pill)
         mode = .open
-        transition(to: panelRect, radius: Self.openRadius)
+        // The panel grows symmetrically out of the notch; the pill retracts into it (the panel shows the numbers).
+        hidePill()
+        transition(to: panelRect, radius: Self.openRadius, ear: .hide)
         // The content comes in once the shape is about 60 % open.
         NotchMotion.reveal(container, delay: Self.contentDelay)
         addMonitors()
@@ -174,6 +182,8 @@ final class NotchController {
         updatePill()
         shapeRect = closedRect
         shapeRadius = Self.closedRadius
+        earRect = pillShown ? pillEar : nil
+        pillVisible = pillShown
         setWindowFrame(stripRect)
         if !window.isVisible { window.orderFrontRegardless() }
         showNextAlert()
@@ -193,6 +203,8 @@ final class NotchController {
         mode = .closed
         closing = false
         generation += 1
+        // A hide that was in flight must not leave the pill held invisible.
+        NotchMotion.restore(pill)
     }
 
     private var pillRect: CGRect { NotchLayout.pillRect(notch: notch, tagged: pillTagged) }
@@ -206,11 +218,23 @@ final class NotchController {
         return notch
     }
 
-    /// The closed black shape. A real notch needs no drawing; a fake one is drawn while the menu bar shows.
+    /// The closed black body (the pill's ear is drawn apart). A real notch needs no drawing; a fake one is drawn
+    /// while the menu bar shows.
     private var closedRect: CGRect {
-        if pillShown { return stripRect }
         if fakeNotch && menuBarVisible { return notch }
         return CGRect(x: notch.minX, y: notch.maxY, width: notch.width, height: 0)
+    }
+
+    /// The ear behind the pill. It starts inside the notch, past the notch's own rounded corner, so the two join
+    /// with a flat bottom.
+    private var pillEar: CGRect {
+        CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: pillRect.maxX - notch.maxX + 2 * Self.closedRadius,
+               height: notch.height)
+    }
+
+    /// The ear retracted into the notch.
+    private var tuckedEar: CGRect {
+        CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
     }
 
     private func local(_ rect: CGRect) -> CGRect {
@@ -229,46 +253,74 @@ final class NotchController {
         window.setFrame(frame.integral, display: false)
         root.frame = CGRect(origin: .zero, size: window.frame.size)
         pill.frame = local(pillRect)
-        if pillShown || final { pill.isHidden = !pillShown }
+        if pillVisible || final { pill.isHidden = !pillVisible }
         panelView?.frame = local(panelRect)
         alertView?.frame = local(CGRect(x: alertRect.minX, y: alertRect.minY, width: alertRect.width,
                                         height: AlertBanner.lineHeight))
-        root.setShape(NotchShapeView.path(local(shapeRect), radius: shapeRadius))
+        root.set(.body, NotchShapeView.path(local(shapeRect), radius: shapeRadius))
+        root.set(.ear, earRect.map { NotchShapeView.path(local($0), radius: Self.closedRadius) })
         syncHover()
     }
 
-    /// Morphs the shape to `target` with its top edge pinned to the screen top. The window is set once to hold
-    /// both shapes (with room for the spring's overshoot sideways and downward, never upward), the shape animates
-    /// inside it, and the window shrinks to the final shape when the animation ends.
+    private enum Ear { case keep, show, hide }
+
+    /// Morphs the body to `target` (and the ear out of or into the notch) with the top edge pinned to the screen
+    /// top. The window is set once to hold both shapes (with room for the spring's overshoot sideways and downward,
+    /// never upward), the shape animates inside it, and the window shrinks to the final shape when both parts end.
     private func transition(to target: CGRect, radius: CGFloat, spring: NotchShapeView.Spring = .open,
-                            delay: CFTimeInterval = 0, then completion: (() -> Void)? = nil) {
+                            delay: CFTimeInterval = 0, ear: Ear = .keep, then completion: (() -> Void)? = nil) {
         generation += 1
         let gen = generation
         let oldOrigin = window.frame.origin
-        let inFlight = root.isAnimatingShape ? root.presentedPath : nil
+        let bodyInFlight = root.isAnimating(.body) ? root.presentedPath(.body) : nil
+        let earInFlight = root.isAnimating(.ear) ? root.presentedPath(.ear) : nil
         let fromRect = visual(shapeRect), fromRadius = shapeRadius
         let toRect = visual(target)
+        let oldEar = earRect
+        let newEar: CGRect?
+        switch ear {
+        case .keep: newEar = oldEar
+        case .show: newEar = pillEar
+        case .hide: newEar = nil
+        }
 
         let both = fromRect.union(toRect).union(shapeRect).union(target).union(stripRect)
+            .union(oldEar ?? .null).union(newEar ?? .null)
         let slack: CGFloat = 12
         setWindowFrame(CGRect(x: both.minX - slack, y: both.minY - slack, width: both.width + 2 * slack,
                               height: both.height + slack), final: false)
         shapeRect = target
         shapeRadius = radius
+        earRect = newEar
 
         // An interrupted animation continues from where it is, moved into the new window's coordinates.
         var shift = CGAffineTransform(translationX: oldOrigin.x - window.frame.minX, y: oldOrigin.y - window.frame.minY)
-        let from = inFlight?.copy(using: &shift) ?? NotchShapeView.path(local(fromRect), radius: fromRadius)
+        let from = bodyInFlight?.copy(using: &shift) ?? NotchShapeView.path(local(fromRect), radius: fromRadius)
         let to = NotchShapeView.path(local(toRect), radius: radius)
+        let earFrom = earInFlight?.copy(using: &shift)
+            ?? NotchShapeView.path(local(oldEar ?? tuckedEar), radius: Self.closedRadius)
+        let earTo = NotchShapeView.path(local(newEar ?? tuckedEar), radius: Self.closedRadius)
+        let moveEar = oldEar != nil || newEar != nil
+
         let finish = { [weak self] in
             guard let self, gen == self.generation else { return }
-            self.setWindowFrame(target.union(self.stripRect))
+            self.setWindowFrame(target.union(self.stripRect).union(self.earRect ?? .null))
             completion?()
         }
         if NotchMotion.reduceMotion {
-            root.crossfade(to: to, completion: finish)
-        } else {
-            root.animateShape(from: from, to: to, spring: spring, delay: delay, completion: finish)
+            root.crossfade(body: to, ear: newEar.map { NotchShapeView.path(local($0), radius: Self.closedRadius) },
+                           completion: finish)
+            return
+        }
+        var pending = moveEar ? 2 : 1
+        let partDone = {
+            pending -= 1
+            if pending == 0 { finish() }
+        }
+        root.animate(.body, from: from, to: to, spring: spring, delay: delay, completion: partDone)
+        if moveEar {
+            root.animate(.ear, from: earFrom, to: earTo, spring: newEar == nil ? .close : .open, delay: delay,
+                         completion: partDone)
         }
     }
 
@@ -278,8 +330,8 @@ final class NotchController {
         transition(to: closedRect, radius: Self.closedRadius, spring: .close, delay: delay) { [weak self] in
             guard let self else { return }
             self.closing = false
-            // The pill may have appeared or gone while sliding.
-            if self.shapeRect != self.closedRect { self.transitionClosed() }
+            // Back in the notch: the pill slides out again (or the closed shape changed while sliding).
+            if self.pillShown || self.shapeRect != self.closedRect { self.transitionClosed() }
             // Hand the keyboard back to the app the user was in (the panel became key only through a click).
             if wasKey || self.window.isKeyWindow {
                 self.window.orderOut(nil)
@@ -289,28 +341,35 @@ final class NotchController {
         }
     }
 
-    /// The closed shape changed (pill shown or hidden, menu bar shown or hidden): the pill slides out of the
-    /// notch's right edge with its ring fading in, or fades and retracts into the notch.
+    /// The closed shape changed (pill shown or hidden, menu bar shown or hidden, panel just closed): the pill slides
+    /// out of the notch's right edge with its ring fading in, or fades and retracts into the notch.
     private func transitionClosed() {
-        let showing = pillShown && pill.isHidden
-        let hiding = !pillShown && !pill.isHidden
-        if hiding { NotchMotion.fadeOut(pill, duration: 0.08) }
-        transition(to: closedRect, radius: Self.closedRadius, spring: hiding ? .close : .open,
-                   delay: hiding ? 0.05 : 0) { [weak self] in
-            guard let self, !self.pillShown else { return }
-            NotchMotion.restore(self.pill)
+        if pillShown { showPill() } else { hidePill() }
+        transition(to: closedRect, radius: Self.closedRadius, spring: pillShown ? .open : .close,
+                   delay: pillShown ? 0 : 0.05, ear: pillShown ? .show : .hide)
+    }
+
+    /// Makes the pill visible, cancelling any held or in-flight fade-out; fades it in if it was not visible.
+    private func showPill() {
+        pill.isHidden = false
+        NotchMotion.restore(pill)
+        if !pillVisible { NotchMotion.reveal(pill, delay: 0.1, duration: 0.2) }
+        pillVisible = true
+    }
+
+    /// Fades the pill out and holds it invisible until `showPill`.
+    private func hidePill() {
+        if pillVisible {
+            if NotchMotion.reduceMotion { pill.isHidden = true } else { NotchMotion.fadeOut(pill, duration: 0.08) }
         }
-        if showing {
-            NotchMotion.restore(pill)
-            NotchMotion.reveal(pill, delay: 0.1, duration: 0.2)
-        }
+        pillVisible = false
     }
 
     // MARK: Pill
 
     private func updatePill() {
         let account = store.pillAccount
-        let wanted = account != nil && menuBarVisible && (store.activeProvider != nil || showAlways)
+        let wanted = account != nil && menuBarVisible && (store.activeProvider != nil || showAlways) && !debugHidePill
         let now = Date()
         if let account {
             let w = pillWindow(store.snapshots[account.id]?.windows ?? [], now: now)
@@ -346,10 +405,9 @@ final class NotchController {
         case .closed:
             if (wasShown != pillShown || (pillShown && wasTagged != pillTagged)) && !closing { transitionClosed() }
         case .open:
-            pill.frame = local(pillRect)
             resizePanel()
         case .alert:
-            pill.frame = local(pillRect)
+            break
         }
     }
 
@@ -381,7 +439,8 @@ final class NotchController {
         view.wantsLayer = true
         root.content.addSubview(view, positioned: .below, relativeTo: pill)
         mode = .alert
-        transition(to: alertRect, radius: Self.openRadius)
+        hidePill()
+        transition(to: alertRect, radius: Self.openRadius, ear: .hide)
         NotchMotion.reveal(view, delay: Self.contentDelay)
         alertTimer = oneShot(AlertBanner.visibleFor) { [weak self] in self?.dismissAlert() }
     }
@@ -444,7 +503,7 @@ final class NotchController {
 
     private func clicked(_ event: NSEvent) {
         let point = window.convertPoint(toScreen: event.locationInWindow)
-        if pillShown && pillRect.contains(point) {
+        if mode == .closed && pillShown && pillRect.contains(point) {
             onOpenUsage()
         } else if mode != .open {
             openPanel()
@@ -514,6 +573,11 @@ final class NotchController {
         let visible = screen.isMenuBarVisible
         guard visible != menuBarVisible else { return }
         menuBarVisible = visible
+        refreshClosedShape()
+    }
+
+    func debugSetPillHidden(_ hidden: Bool) {
+        debugHidePill = hidden
         refreshClosedShape()
     }
 

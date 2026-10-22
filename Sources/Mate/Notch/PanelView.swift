@@ -138,7 +138,7 @@ struct PanelView: View {
                     }
                 }
                 .font(.system(size: 12))
-                .help(session == nil ? Text(verbatim: "") : liveHelp(provider))
+                .help(ifLive: session == nil ? nil : liveHelp(provider))
             }
         }
     }
@@ -224,5 +224,13 @@ extension UsageStore {
         guard !all.isEmpty else { return }
         let current = all.firstIndex { $0.id == panelAccount?.id } ?? 0
         selectedAccountID = all[((current + step) % all.count + all.count) % all.count].id
+    }
+}
+
+private extension View {
+    /// A tooltip only when there is one to show (an empty `.help` still installs a tooltip).
+    @ViewBuilder
+    func help(ifLive text: Text?) -> some View {
+        if let text { help(text) } else { self }
     }
 }

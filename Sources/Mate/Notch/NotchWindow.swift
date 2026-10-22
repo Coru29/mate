@@ -56,18 +56,24 @@ extension NSScreen {
     }
 }
 
-/// The window's content: the black shape (notch, pill ear, panel or alert) as one `CAShapeLayer`, plus hover and
-/// click handling for the whole window. Hover comes from an `NSTrackingArea`, never from a global monitor.
+/// The window's content: the black shape as two `CAShapeLayer`s (the body: notch, panel or alert; and the ear: the
+/// pill's part right of the notch), plus hover and click handling for the whole window. Two parts let the body grow
+/// symmetrically out of the notch while the ear retracts into it. Hover comes from an `NSTrackingArea`, never from a
+/// global monitor.
 final class NotchShapeView: NSView {
     var onHover: (Bool) -> Void = { _ in }
     var onClick: (NSEvent) -> Void = { _ in }
     var onRightClick: (NSEvent) -> Void = { _ in }
 
-    private let shape = CAShapeLayer()
-    /// Holds the pill, panel and alert views; masked by the same path as the black shape, so content never shows
+    enum Part { case body, ear }
+
+    private let body = CAShapeLayer()
+    private let ear = CAShapeLayer()
+    /// Holds the pill, panel and alert views; masked by the same paths as the black shape, so content never shows
     /// outside it while the shape morphs (the pill slides out of the notch, the panel is uncovered as it grows).
     let content = NotchContentView()
-    private let clip = CAShapeLayer()
+    private let clipBody = CAShapeLayer()
+    private let clipEar = CAShapeLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -75,11 +81,15 @@ final class NotchShapeView: NSView {
         // Barely there, so the window server routes the mouse to the whole frame even where nothing is drawn
         // (the hover strip over a hidden fake notch).
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.004).cgColor
-        shape.fillColor = NSColor.black.cgColor
-        layer?.addSublayer(shape)
+        for l in [body, ear, clipBody, clipEar] { l.fillColor = NSColor.black.cgColor }
+        layer?.addSublayer(body)
+        layer?.addSublayer(ear)
         content.frame = bounds
         content.autoresizingMask = [.width, .height]
         addSubview(content)
+        let clip = CALayer()
+        clip.addSublayer(clipBody)
+        clip.addSublayer(clipEar)
         content.layer?.mask = clip
     }
 
@@ -110,26 +120,33 @@ final class NotchShapeView: NSView {
         static let close = Spring(response: 0.28, damping: 1, maxDuration: 0.42)
     }
 
-    var isAnimatingShape: Bool { shape.animation(forKey: "path") != nil }
+    private func layers(_ part: Part) -> [CAShapeLayer] {
+        part == .body ? [body, clipBody] : [ear, clipEar]
+    }
+
+    func isAnimating(_ part: Part) -> Bool { layers(part)[0].animation(forKey: "path") != nil }
 
     /// What is on screen now (mid-animation, the in-flight path), in this view's coordinates.
-    var presentedPath: CGPath? { shape.presentation()?.path ?? shape.path }
+    func presentedPath(_ part: Part) -> CGPath? {
+        let l = layers(part)[0]
+        return l.presentation()?.path ?? l.path
+    }
 
-    /// Sets the black shape at once.
-    func setShape(_ path: CGPath) {
+    /// Sets a part at once (nil: not drawn).
+    func set(_ part: Part, _ path: CGPath?) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for l in [shape, clip] {
+        for l in layers(part) {
             l.removeAnimation(forKey: "path")
             l.path = path
         }
         CATransaction.commit()
     }
 
-    /// Springs the black shape from `from` to `to`, starting after `delay`; `completion` runs when it ends (or is
-    /// replaced by a newer animation).
-    func animateShape(from: CGPath, to: CGPath, spring s: Spring, delay: CFTimeInterval = 0,
-                      completion: @escaping () -> Void) {
+    /// Springs a part from `from` to `to`, starting after `delay`; `completion` runs when it ends (or is replaced by
+    /// a newer animation).
+    func animate(_ part: Part, from: CGPath, to: CGPath, spring s: Spring, delay: CFTimeInterval = 0,
+                 completion: @escaping () -> Void) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let spring = CASpringAnimation(keyPath: "path")
@@ -144,7 +161,7 @@ final class NotchShapeView: NSView {
             spring.fillMode = .backwards
         }
         CATransaction.setCompletionBlock(completion)
-        for l in [shape, clip] {
+        for l in layers(part) {
             l.add(spring, forKey: "path")
             l.path = to
         }
@@ -152,7 +169,7 @@ final class NotchShapeView: NSView {
     }
 
     /// Reduce Motion: the new state crossfades in, nothing moves.
-    func crossfade(to path: CGPath, completion: @escaping () -> Void) {
+    func crossfade(body bodyPath: CGPath, ear earPath: CGPath?, completion: @escaping () -> Void) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let fade = CATransition()
@@ -160,9 +177,11 @@ final class NotchShapeView: NSView {
         fade.duration = 0.2
         CATransaction.setCompletionBlock(completion)
         layer?.add(fade, forKey: "crossfade")
-        for l in [shape, clip] {
-            l.removeAnimation(forKey: "path")
-            l.path = path
+        for (part, path) in [(Part.body, Optional(bodyPath)), (.ear, earPath)] {
+            for l in layers(part) {
+                l.removeAnimation(forKey: "path")
+                l.path = path
+            }
         }
         CATransaction.commit()
     }
@@ -199,6 +218,15 @@ final class NotchContentView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override var isFlipped: Bool { false }
+
+    /// The mask is not a sublayer, so nothing sizes it: keep it on the whole view.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.mask?.frame = bounds
+        CATransaction.commit()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)

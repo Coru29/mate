@@ -34,6 +34,8 @@ private let now = Date(timeIntervalSince1970: 1_792_670_400)
     #expect(NotchText.tokens(1_250_000).hasSuffix(" M tokens"))
     // From 10 M the decimal is noise: "71 M tokens", not "71,1 M tokens".
     #expect(NotchText.tokens(71_100_000) == "71 M tokens")
+    // Just under 10 M rounds up to 10 M, without a stray decimal.
+    #expect(NotchText.tokens(9_970_000) == "10 M tokens")
 }
 
 @Test func alertLineNamesAccountWindowAndRunOut() {
@@ -50,6 +52,7 @@ private let now = Date(timeIntervalSince1970: 1_792_670_400)
     #expect(NotchText.tokensShort(182_400) == "182 k")
     #expect(NotchText.tokensShort(1_240_000).hasSuffix(" M"))
     #expect(NotchText.tokensShort(25_000_000) == "25 M")
+    #expect(NotchText.tokensShort(9_970_000) == "10 M")
 }
 
 @Test func usdHasTwoDecimals() {

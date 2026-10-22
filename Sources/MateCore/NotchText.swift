@@ -59,6 +59,13 @@ public enum NotchText {
         return String(localized: "hace \(minutes / 60) h")
     }
 
+    /// Millions with one decimal below 10 M and none from there. Decided on the rounded value, so 9.97 M reads
+    /// "10", never "10,0".
+    private static func millions(_ n: Int) -> String {
+        let rounded = (Double(n) / 100_000).rounded() / 10
+        return rounded.formatted(.number.precision(.fractionLength(rounded >= 10 ? 0 : 1)))
+    }
+
     /// Week tag next to the pill's percent when it shows a weekly window instead of the session.
     public static var weekTag: String { String(localized: "sem") }
 
@@ -66,8 +73,7 @@ public enum NotchText {
     public static func tokens(_ n: Int) -> String {
         let amount: String
         if n >= 1_000_000 {
-            let m = Double(n) / 1_000_000
-            amount = m.formatted(.number.precision(.fractionLength(m >= 10 ? 0 : 1))) + " M"
+            amount = millions(n) + " M"
         } else if n >= 1000 {
             amount = "\(n / 1000) k"
         } else {
@@ -79,8 +85,7 @@ public enum NotchText {
     /// Compact count for chart axes and tables: "950", "182 k", "1,2 M".
     public static func tokensShort(_ n: Int) -> String {
         if n >= 1_000_000 {
-            let m = Double(n) / 1_000_000
-            return m.formatted(.number.precision(.fractionLength(m >= 10 ? 0 : 1))) + " M"
+            return millions(n) + " M"
         }
         if n >= 1000 { return "\(n / 1000) k" }
         return "\(n)"

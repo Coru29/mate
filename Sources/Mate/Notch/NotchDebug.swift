@@ -1,7 +1,8 @@
 import AppKit
 
 /// `--snapshot-anim <dir>`: opens the panel 1.5 s after launch and closes it at 3.5 s, rendering what is on screen
-/// (the layers' presentation, mid-animation) to PNGs at several moments of each. In-process, no screen recording.
+/// (the layers' presentation, mid-animation) to PNGs at several moments of each. At 5 s it starts hiding the pill
+/// and cancels the hide 40 ms later (pill-*.png: the pill must end visible). In-process, no screen recording.
 extension NotchController {
     func scheduleAnimationSnapshots() {
         let args = CommandLine.arguments
@@ -18,6 +19,13 @@ extension NotchController {
             self?.closePanel()
             for t in frames {
                 DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/close-\(Int(t * 1000))ms.png") }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            self?.debugSetPillHidden(true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { self?.debugSetPillHidden(false) }
+            for t in [0.02, 0.1, 0.3, 1.0] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/pill-\(Int(t * 1000))ms.png") }
             }
         }
     }
