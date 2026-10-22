@@ -36,12 +36,15 @@ cleanup() { if [ -n "$STARTED" ]; then kill "$STARTED" 2>/dev/null || true; fi; 
 trap cleanup EXIT
 
 if [ -z "$PID" ]; then
+  APP=$(cd "$APP" 2>/dev/null && pwd) || { echo "No está la app $APP (scripts/install.sh, o --app <ruta>)." >&2; exit 1; }
   BIN="$APP/Contents/MacOS/Mate"
   [ -x "$BIN" ] || { echo "No está $BIN (scripts/install.sh, o --app <ruta>)." >&2; exit 1; }
-  # Two real instances would share the same data and keychain items; a --fake run is separate.
+  # A second real copy of this same app would only hand off to the first and quit; measure that one instead.
+  # Only this path counts: other copies (test builds, a --fake run) are separate.
   if [ $# -eq 0 ] || [[ " $* " != *" --fake "* ]]; then
-    if RUNNING=$(pgrep -x Mate); then
-      echo "Mate ya está abierto (pid $RUNNING): medilo con --pid $RUNNING, cerralo antes, o usá -- --fake." >&2
+    RUNNING=$(ps -axo pid=,comm= | awk -v exe="$BIN" '{pid=$1; $1=""; sub(/^ /, ""); if ($0 == exe) print pid}' | head -n 1)
+    if [ -n "$RUNNING" ]; then
+      echo "$APP ya está abierta (pid $RUNNING): medila con --pid $RUNNING, cerrala antes, o usá -- --fake." >&2
       exit 1
     fi
   fi

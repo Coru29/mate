@@ -64,6 +64,8 @@ final class NotchController {
     /// The step of the swipe that changed the selection, so the slide goes the way the fingers went.
     private var pendingStep: Int?
     private var alertView: NSView?
+    /// What a click on the alert on screen does.
+    private var alertAction: AlertBanner.Item.Action = .openPanel
     /// Panel or alert views fading out while the shape closes; removed when the shape is at rest, so nothing is
     /// re-laid out mid-animation.
     private var retired: [NSView] = []
@@ -121,6 +123,14 @@ final class NotchController {
         Log.info("alert: \(text)")
         if NotchPrefs.systemNotifications { AlertBanner.post(text) }
         banner.enqueue(AlertBanner.Item(text: text, tone: tone))
+        if mode == .closed && !closing { showNextAlert() }
+    }
+
+    /// A background update check found `version`: one alert ("click to install"), shown when the notch is closed.
+    func presentUpdate(_ version: String) {
+        let text = String(localized: "Mate \(version) disponible — click para instalar")
+        Log.info("alert: \(text)")
+        banner.enqueue(AlertBanner.Item(text: text, tone: .ok, action: .installUpdate))
         if mode == .closed && !closing { showNextAlert() }
     }
 
@@ -496,6 +506,7 @@ final class NotchController {
     private func showNextAlert() {
         guard mode == .closed, !closing, let info = screenInfo, let item = banner.next() else { return }
         let view = banner.makeView(item)
+        alertAction = item.action
         let width = min(max(view.fittingSize.width, 260), min(520, info.frame.width - 20))
         var x = notch.midX - width / 2
         x = min(max(x, info.frame.minX), info.frame.maxX - width)
@@ -577,6 +588,9 @@ final class NotchController {
         let point = window.convertPoint(toScreen: event.locationInWindow)
         if mode == .closed && pillShown && NotchLayout.hoverContains(pillRect, point) {
             onOpenUsage()
+        } else if mode == .alert && alertAction == .installUpdate {
+            dismissAlert()
+            Updater.shared.offerInstall()
         } else if mode != .open {
             openPanel()
         }

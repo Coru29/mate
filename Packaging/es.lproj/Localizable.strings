@@ -231,14 +231,18 @@
 "Bajar %@" = "Bajar %@";
 
 /* Updates */
+"Instalar Mate %@…" = "Instalar Mate %@…";
+"Mate %@ disponible — click para instalar" = "Mate %@ disponible — click para instalar";
+"Mate %@ disponible" = "Mate %@ disponible";
+"Instalar" = "Instalar";
+"GitHub respondió con el error HTTP %@." = "GitHub respondió con el error HTTP %@.";
+"La descarga falló (HTTP %@)." = "La descarga falló (HTTP %@).";
 "%@ falló: %@" = "%@ falló: %@";
 "Abrir GitHub" = "Abrir GitHub";
-"Actualizar a Mate %@…" = "Actualizar a Mate %@…";
 "Actualizar y reiniciar" = "Actualizar y reiniciar";
 "Buscar ahora" = "Buscar ahora";
 "Buscar una versión nueva" = "Buscar una versión nueva";
 "El DMG no contiene Mate.app." = "El DMG no contiene Mate.app.";
-"La descarga falló." = "La descarga falló.";
 "La versión descargada no coincide con la publicada." = "La versión descargada no coincide con la publicada.";
 "La versión descargada no está firmada con el certificado de Mate (%@); no se instaló." = "La versión descargada no está firmada con el certificado de Mate (%@); no se instaló.";
 "Mate %@ es la versión más nueva." = "Mate %@ es la versión más nueva.";

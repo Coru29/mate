@@ -8,7 +8,7 @@ import Security
 /// place and relaunches. Anything not signed by the project's certificate is refused and the user gets the release
 /// page. The same certificate is also what keeps macOS's "Permitir siempre" keychain answers across updates.
 @MainActor
-final class Updater {
+final class Updater: ObservableObject {
     static let shared = Updater()
     /// The release list, not `/releases/latest`: 0.x releases are pre-releases, which `latest` skips.
     static let releasesAPI = URL(string: "https://api.github.com/repos/Coru29/mate/releases?per_page=30")!
@@ -36,9 +36,13 @@ final class Updater {
         return URLSession(configuration: c)
     }()
 
-    /// A newer release than the running one, once a check has found it.
-    private(set) var available: ReleaseInfo?
-    private(set) var isInstalling = false
+    /// A newer release than the running one, once a check has found it (Configuración → Actualizaciones shows it).
+    @Published private(set) var available: ReleaseInfo?
+    @Published private(set) var isInstalling = false
+    /// Called once per version a background check finds (the notch drops an alert for it). The version is
+    /// remembered, so a restart doesn't announce it again.
+    var onFound: ((ReleaseInfo) -> Void)?
+    private static let announcedKey = "updateAnnouncedVersion"
     private var scheduler: NSBackgroundActivityScheduler?
     /// The check 30 s after launch (or after the option is turned on): cancelled when the option is turned off.
     private var launchCheck: Task<Void, Never>?
@@ -84,7 +88,13 @@ final class Updater {
             available = UpdateFeed.newest(releases, current: currentVersion)
             if let available {
                 Log.info("Update available: \(available.version)")
-                if userInitiated { offerInstall() }
+                if userInitiated {
+                    UserDefaults.mate.set(available.version.description, forKey: Self.announcedKey)
+                    offerInstall()
+                } else if UserDefaults.mate.string(forKey: Self.announcedKey) != available.version.description {
+                    UserDefaults.mate.set(available.version.description, forKey: Self.announcedKey)
+                    onFound?(available)
+                }
             } else if userInitiated {
                 let current = currentVersion.description
                 inform(String(localized: "Tenés la última versión"), String(localized: "Mate \(current) es la versión más nueva."))
@@ -100,10 +110,13 @@ final class Updater {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("Mate/\(currentVersion)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await Self.session.data(for: request)
-        let releases = UpdateFeed.parse(data)
-        guard (response as? HTTPURLResponse)?.statusCode == 200, !releases.isEmpty else {
-            throw Failure.message(String(localized: "No se encontró una versión publicada."))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            let code = String(status)
+            throw Failure.message(String(localized: "GitHub respondió con el error HTTP \(code)."))
         }
+        let releases = UpdateFeed.parse(data)
+        guard !releases.isEmpty else { throw Failure.message(String(localized: "No se encontró una versión publicada.")) }
         return releases
     }
 
@@ -199,7 +212,11 @@ final class Updater {
         defer { try? fm.removeItem(at: work) }
 
         let (downloaded, response) = try await session.download(from: dmg)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw Failure.message(String(localized: "La descarga falló.")) }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            let code = String(status)
+            throw Failure.message(String(localized: "La descarga falló (HTTP \(code))."))
+        }
         let image = work.appendingPathComponent("Mate.dmg")
         try fm.moveItem(at: downloaded, to: image)
 

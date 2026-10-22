@@ -36,6 +36,12 @@ struct UpdateFeedTests {
         #expect(UpdateFeed.parse(Data(#"{"message": "Not Found"}"#.utf8)).isEmpty)
     }
 
+    @Test func suffixedTagsAreNotReleases() {
+        let releases = UpdateFeed.parse(feed(release("v0.3.0-beta.1", prerelease: true), release("0.2.1-rc1"),
+                                             release("v0.2.0"), release("0.1.5")))
+        #expect(releases.map(\.version.description) == ["0.2.0", "0.1.5"])
+    }
+
     @Test func prefersTheMateDmgAsset() {
         let assets = #"""
         [{"name": "Other.dmg", "browser_download_url": "https://github.com/a/Other.dmg"},

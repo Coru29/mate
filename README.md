@@ -17,7 +17,7 @@
 
 ---
 
-While an agent is working, a small ring next to the notch shows the tightest limit of the one you are using (the 5-hour session, the week…), colored by pace. Hover over the notch and a black panel drops out of it with every meter, its reset time and whether you are on track or about to run out. Alerts slide down from the notch at 75, 90 and 100 %.
+While an agent is working, a small ring next to the notch shows how much of the 5-hour session you have used (or the week, when that is the one running out), colored by pace. Hover over the notch and a black panel drops out of it with every meter, its reset time and whether you are on track or about to run out. Alerts slide down from the notch at 75, 90 and 100 %.
 
 In Uruguay, *mate* is passed around and refilled over and over, a bit like a usage quota; in English a *mate* is a companion.
 
@@ -27,8 +27,8 @@ Mate is inspired by [Agent Limit](https://agentlimit.app), a well-made paid app 
 
 ## Features
 
-- **Pill by the notch**: a ring with the percentage of the tightest window of the active agent; it shows up while an agent is writing its session logs and hides when nothing is running (or always, if you prefer).
-- **Panel on hover**: session and weekly meters (plus Opus/Sonnet, billing cycle, monthly budget or daily quotas when the provider has them), reset times, pace, the project you are in and a live session row with elapsed time and tokens. Swipe sideways with two fingers or click the dots to go through your accounts. Right-click for Usage, Settings, Refresh now, Pause and Quit.
+- **Pill by the notch**: a ring with the active agent's session percentage. Once a weekly window reaches 80 % it shows that one instead, tagged "wk", and any window at 100 % wins. It shows up while an agent is writing its session logs and hides when nothing is running (or always, if you prefer).
+- **Panel on hover**: session and weekly meters (plus Opus/Sonnet, billing cycle, monthly budget or daily quotas when the provider has them), reset times, pace, the project you are in and a live session row with elapsed time and tokens. Go through your accounts with a horizontal two-finger swipe on the trackpad (one account per swipe) or by clicking the indicator dots. Right-click for Usage, Settings, Refresh now, Pause and Quit.
 - **Pace**: *on track*, *going fast*, *runs out at 16:40* (a projection from the last hour), *limit reached*.
 - **Alerts from the notch** when a window crosses 75 / 90 / 100 % and when it resets; thresholds and providers can be changed, and system notifications are optional.
 - **Usage window**: tokens per day for the last 7 days and a 30-day breakdown by model with an estimated API-price cost, from the agents' local logs.
@@ -67,7 +67,7 @@ macOS 14 Sonoma or later on Apple silicon.
 
 ## Install
 
-1. Download **[Mate.dmg](https://github.com/Coru29/mate/releases/latest/download/Mate.dmg)** from [Releases](https://github.com/Coru29/mate/releases) (or build it, below) and drag **Mate** to Applications.
+1. Download **Mate.dmg** from the newest release in [Releases](https://github.com/Coru29/mate/releases) (or build it, below) and drag **Mate** to Applications.
 2. Mate is not notarized by Apple, so macOS will not open it the first time. **Right-click the app → Open** (on recent macOS, go to **System Settings → Privacy & Security** and click **Open Anyway**), or run `xattr -dr com.apple.quarantine /Applications/Mate.app`.
 3. A short guide finds the agents signed in on your Mac. When macOS asks **"Mate wants to access … in your keychain"** (for Claude Code's item), enter your password and click **Always Allow**: Mate reads that item, and with "Always Allow" macOS doesn't ask again, not even after updates (they are signed with the same certificate).
 
@@ -75,7 +75,7 @@ Mate has no Dock icon and no menu-bar icon: it lives in the notch. Opening it ag
 
 ### Updates
 
-Mate checks GitHub shortly after it starts and once a day (Settings → Updates turns it off). When a new version is out, it asks; it downloads the release, verifies it is signed with the same certificate as the running app, replaces itself and reopens. Versions 0.x are published as GitHub pre-releases, and 0.x copies take them.
+Mate checks GitHub shortly after it starts and once a day (Settings → Updates turns it off). When a new version is out, an alert drops from the notch once ("Mate X available — click to install"), and Settings → Updates and the right-click menu offer **Install Mate X…**. Installing downloads the release, verifies it is signed with the same certificate as the running app, replaces the app and reopens it. Versions 0.x are published as GitHub pre-releases, and 0.x copies take them.
 
 ## Build from source
 

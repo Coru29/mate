@@ -17,7 +17,7 @@
 
 ---
 
-Mientras un agente trabaja, un anillito al lado del notch muestra el límite más apretado del que estás usando (la sesión de 5 horas, la semana…), con el color del ritmo. Pasá el mouse por el notch y baja un panel negro con todos los medidores, a qué hora se reinicia cada uno y si vas bien o se te está por acabar. Las alertas bajan desde el notch al 75, 90 y 100 %.
+Mientras un agente trabaja, un anillito al lado del notch muestra cuánto usaste de la sesión de 5 horas (o de la semana, cuando es la que se está acabando), con el color del ritmo. Pasá el mouse por el notch y baja un panel negro con todos los medidores, a qué hora se reinicia cada uno y si vas bien o se te está por acabar. Las alertas bajan desde el notch al 75, 90 y 100 %.
 
 En Uruguay el mate se va pasando y recargando, un poco como un cupo; en inglés *mate* es "compañero".
 
@@ -27,8 +27,8 @@ Mate está inspirada en [Agent Limit](https://agentlimit.app), una app paga muy 
 
 ## Qué hace
 
-- **Pill junto al notch**: un anillo con el porcentaje de la ventana más apretada del agente activo; aparece mientras un agente escribe sus logs de sesión y se oculta cuando no hay nada corriendo (o se muestra siempre, si preferís).
-- **Panel al pasar el mouse**: medidores de sesión y semanal (y Opus/Sonnet, ciclo de facturación, presupuesto mensual o cupos diarios cuando el proveedor los tiene), horas de reset, ritmo, el proyecto en el que estás y una fila de sesión en vivo con el tiempo y los tokens. Deslizá con dos dedos de costado o tocá los puntitos para pasar de cuenta. Click derecho: Uso, Configuración, Actualizar ahora, Pausar y Salir.
+- **Pill junto al notch**: un anillo con el porcentaje de la sesión del agente activo. Cuando una ventana semanal llega al 80 % muestra esa, con la etiqueta "sem", y cualquier ventana al 100 % gana. Aparece mientras un agente escribe sus logs de sesión y se oculta cuando no hay nada corriendo (o se muestra siempre, si preferís).
+- **Panel al pasar el mouse**: medidores de sesión y semanal (y Opus/Sonnet, ciclo de facturación, presupuesto mensual o cupos diarios cuando el proveedor los tiene), horas de reset, ritmo, el proyecto en el que estás y una fila de sesión en vivo con el tiempo y los tokens. Pasá de cuenta deslizando dos dedos de costado en el trackpad (una cuenta por gesto) o tocando los puntitos del indicador. Click derecho: Uso, Configuración, Actualizar ahora, Pausar y Salir.
 - **Ritmo**: *al día*, *va rápido*, *se acaba a las 16:40* (proyección con la última hora), *límite alcanzado*.
 - **Alertas desde el notch** cuando una ventana cruza el 75 / 90 / 100 % y cuando se reinicia; los umbrales y los proveedores se pueden cambiar, y las notificaciones del sistema son opcionales.
 - **Ventana de uso**: tokens por día de los últimos 7 días y el desglose de 30 días por modelo con un costo estimado a precio de API, desde los logs locales de los agentes.
@@ -67,7 +67,7 @@ macOS 14 Sonoma o posterior en Apple silicon.
 
 ## Instalación
 
-1. Bajá **[Mate.dmg](https://github.com/Coru29/mate/releases/latest/download/Mate.dmg)** de [Releases](https://github.com/Coru29/mate/releases) (o compilalo, más abajo) y arrastrá **Mate** a Aplicaciones.
+1. Bajá **Mate.dmg** del release más nuevo en [Releases](https://github.com/Coru29/mate/releases) (o compilalo, más abajo) y arrastrá **Mate** a Aplicaciones.
 2. Mate no está notarizada por Apple, así que macOS no la abre la primera vez. **Click derecho en la app → Abrir** (en macOS recientes, andá a **Configuración del Sistema → Privacidad y seguridad** y tocá **Abrir igualmente**), o corré `xattr -dr com.apple.quarantine /Applications/Mate.app`.
 3. Un asistente corto detecta los agentes que tienen sesión en tu Mac. Cuando macOS pregunte **"Mate quiere acceder a … de tu llavero"** (por el ítem de Claude Code), poné tu contraseña y tocá **Permitir siempre**: Mate lee ese ítem, y con "Permitir siempre" macOS no vuelve a preguntar, ni siquiera después de una actualización (vienen firmadas con el mismo certificado).
 
@@ -75,7 +75,7 @@ Mate no tiene ícono en el Dock ni en la barra de menú: vive en el notch. Abrir
 
 ### Actualizaciones
 
-Mate mira GitHub un rato después de abrirse y una vez por día (se apaga en Configuración → Actualizaciones). Cuando hay una versión nueva, pregunta; baja el release, verifica que esté firmado con el mismo certificado que la app abierta, se reemplaza y se vuelve a abrir. Las versiones 0.x se publican como pre-releases de GitHub, y las copias 0.x las toman.
+Mate mira GitHub un rato después de abrirse y una vez por día (se apaga en Configuración → Actualizaciones). Cuando hay una versión nueva baja una alerta desde el notch, una sola vez ("Mate X disponible — click para instalar"), y Configuración → Actualizaciones y el menú del click derecho ofrecen **Instalar Mate X…**. Al instalar, baja el release, verifica que esté firmado con el mismo certificado que la app abierta, reemplaza la app y la vuelve a abrir. Las versiones 0.x se publican como pre-releases de GitHub, y las copias 0.x las toman.
 
 ## Compilar desde el código
 

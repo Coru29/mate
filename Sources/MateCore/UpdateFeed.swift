@@ -15,7 +15,8 @@ public struct ReleaseInfo: Equatable, Sendable {
 public enum UpdateFeed {
     public static let dmgName = "Mate.dmg"
 
-    /// A release list or a single release object; entries without a version tag or a page are skipped.
+    /// A release list or a single release object; entries without a plain version tag ("v1.2.3", no "-beta"
+    /// suffix: `AppVersion` would read it as the final version) or without a page are skipped.
     public static func parse(_ data: Data) -> [ReleaseInfo] {
         guard let json = try? JSONSerialization.jsonObject(with: data) else { return [] }
         let objects = json as? [[String: Any]] ?? (json as? [String: Any]).map { [$0] } ?? []
@@ -23,7 +24,9 @@ public enum UpdateFeed {
     }
 
     private static func release(_ json: [String: Any]) -> ReleaseInfo? {
-        guard let tag = json["tag_name"] as? String, let version = AppVersion(tag),
+        guard let tag = json["tag_name"] as? String,
+              tag.range(of: #"^[vV]?[0-9]+(\.[0-9]+)*$"#, options: .regularExpression) != nil,
+              let version = AppVersion(tag),
               let page = (json["html_url"] as? String).flatMap(URL.init(string:)) else { return nil }
         let assets = (json["assets"] as? [[String: Any]] ?? []).compactMap { a -> (String, URL)? in
             guard let name = a["name"] as? String,

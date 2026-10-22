@@ -7,8 +7,12 @@ import UserNotifications
 @MainActor
 final class AlertBanner {
     struct Item: Equatable {
+        /// What a click on the alert does.
+        enum Action: Equatable { case openPanel, installUpdate }
+
         var text: String
         var tone: Tone
+        var action: Action = .openPanel
     }
 
     static let visibleFor: TimeInterval = 4

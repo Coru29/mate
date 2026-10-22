@@ -7,9 +7,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var backend: SettingsBackend?
     private var updatesObserver: NSObjectProtocol?
     private var handOffObserver: NSObjectProtocol?
+    /// SIGTERM (`kill <pid>`, `scripts/install.sh`) quits like the menu does, so the store is saved.
+    private var termSource: DispatchSourceSignal?
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
+        signal(SIGTERM, SIG_IGN)
+        let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        term.setEventHandler { NSApp.terminate(nil) }
+        term.resume()
+        termSource = term
         let store = DebugCLI.makeStore()
         let notch = NotchController(store: store)
         let backend = SettingsBackend(store: store, fake: DebugCLI.isFake)
@@ -44,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
         }
         DebugCLI.scheduleUIChecks(notch: notch, store: store)
+        Updater.shared.onFound = { [weak notch] release in notch?.presentUpdate(release.version.description) }
         configureUpdates()
         if !DebugCLI.isFake {
             handOffObserver = SingleInstance.observe { [weak self] in self?.reopen() }
