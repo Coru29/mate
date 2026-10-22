@@ -54,6 +54,13 @@ public enum NotchLayout {
                        width: size.width, height: size.height), true)
     }
 
+    /// Whether the cursor at `p` is over `rect`, edges included. `CGRect.contains` is half-open and leaves out the
+    /// max edges, but a cursor pinned against the top of the screen sits exactly at y == screen.frame.maxY, the top
+    /// edge of every notch window: with `contains` it reads as outside and the panel closes under it.
+    public static func hoverContains(_ rect: CGRect, _ p: CGPoint) -> Bool {
+        !rect.isNull && p.x >= rect.minX && p.x <= rect.maxX && p.y >= rect.minY && p.y <= rect.maxY
+    }
+
     public static func pillRect(notch: CGRect, tagged: Bool = false) -> CGRect {
         CGRect(x: notch.maxX, y: notch.minY, width: pillWidth + (tagged ? pillTagWidth : 0), height: notch.height)
     }

@@ -48,6 +48,27 @@ import Testing
         #expect(NotchLayout.pillRect(notch: n) == CGRect(x: 850, y: 950, width: 56, height: 32))
     }
 
+    /// A cursor slammed against the top of the screen sits at y == screen.frame.maxY (Cocoa's y is
+    /// mainHeight - CG y, and CG's top row is 0), which half-open `CGRect.contains` puts outside a window that
+    /// touches the top.
+    @Test func pointOnTopEdgeIsInside() {
+        let panel = CGRect(x: 770, y: 783, width: 380, height: 297) // top at 1080, the screen's top
+        #expect(!panel.contains(CGPoint(x: 960, y: 1080))) // the bug: half-open
+        #expect(NotchLayout.hoverContains(panel, CGPoint(x: 960, y: 1080)))
+        // The top corners of a panel clamped to the screen's edges count too.
+        #expect(NotchLayout.hoverContains(panel, CGPoint(x: 770, y: 1080)))
+        #expect(NotchLayout.hoverContains(panel, CGPoint(x: 1150, y: 1080)))
+        #expect(NotchLayout.hoverContains(panel, CGPoint(x: 960, y: 900)))
+    }
+
+    @Test func pointJustBelowBottomIsOutside() {
+        let panel = CGRect(x: 770, y: 783, width: 380, height: 297)
+        #expect(!NotchLayout.hoverContains(panel, CGPoint(x: 960, y: 782.5)))
+        #expect(!NotchLayout.hoverContains(panel, CGPoint(x: 769.5, y: 1000)))
+        #expect(!NotchLayout.hoverContains(panel, CGPoint(x: 1150.5, y: 1000)))
+        #expect(!NotchLayout.hoverContains(.null, CGPoint(x: 960, y: 1080)))
+    }
+
     @Test func taggedPillIsWider() {
         let n = NotchLayout.notchRect(on: macbook()).rect
         #expect(NotchLayout.pillRect(notch: n, tagged: true) == CGRect(x: 850, y: 950, width: 80, height: 32))

@@ -503,7 +503,7 @@ final class NotchController {
     private var hoverRect: CGRect { mode == .closed ? stripRect : window.frame }
 
     private func hoverChanged(_ entered: Bool) {
-        let inside = entered && hoverRect.contains(NSEvent.mouseLocation)
+        let inside = entered && NotchLayout.hoverContains(hoverRect, NSEvent.mouseLocation)
         hovering = inside
         if inside {
             cancel(&closeTimer)
@@ -532,17 +532,18 @@ final class NotchController {
     /// The mouse may have left while the menu was up (no close was scheduled then): decide now.
     func menuDidClose() {
         menuOpen = false
-        hoverChanged(window.frame.contains(NSEvent.mouseLocation))
+        hoverChanged(NotchLayout.hoverContains(window.frame, NSEvent.mouseLocation))
     }
 
     private func syncHover() {
-        let inside = window.frame.contains(NSEvent.mouseLocation) && hoverRect.contains(NSEvent.mouseLocation)
+        let mouse = NSEvent.mouseLocation
+        let inside = NotchLayout.hoverContains(window.frame, mouse) && NotchLayout.hoverContains(hoverRect, mouse)
         if inside != hovering { hoverChanged(inside) }
     }
 
     private func clicked(_ event: NSEvent) {
         let point = window.convertPoint(toScreen: event.locationInWindow)
-        if mode == .closed && pillShown && pillRect.contains(point) {
+        if mode == .closed && pillShown && NotchLayout.hoverContains(pillRect, point) {
             onOpenUsage()
         } else if mode != .open {
             openPanel()
