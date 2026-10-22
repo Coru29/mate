@@ -68,7 +68,7 @@ Lo que el usuario agrega sobre el original:
 
 - Al pasar el mouse por el notch o el pill se despliega hacia abajo un panel negro que continúa la forma del notch. Funciona aunque el pill esté oculto (pasar por el notch siempre lo abre).
 - Muestra, para la cuenta seleccionada: medidores de sesión y semanal (y los extra que tenga), hora de reset de cada uno, estado de ritmo, el proyecto en el que estás (carpeta del último log) y una fila de sesión en vivo con proyecto, tiempo transcurrido y tokens usados.
-- Abajo, puntitos por cada cuenta de cada proveedor habilitado. Scroll sobre el panel o click en un puntito para cambiar. Orden: proveedores en el orden de Configuración, cuentas dentro de cada uno.
+- Abajo, puntitos por cada cuenta de cada proveedor habilitado. Deslizar con dos dedos en horizontal sobre el panel (solo trackpad, una cuenta por gesto) o click en un puntito para cambiar. Orden: proveedores en el orden de Configuración, cuentas dentro de cada uno.
 - En cuentas de Claude que no son la activa de Claude Code aparece **"Usar en Claude Code"** (ver "Cambio de cuenta").
 - Se cierra al sacar el mouse (con un pequeño retardo) o con Esc.
 - Click derecho en el notch o el pill: menú con Uso, Configuración, Actualizar ahora, Pausar, Salir.

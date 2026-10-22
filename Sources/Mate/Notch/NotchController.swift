@@ -13,7 +13,7 @@ final class NotchController {
     private static let openRadius: CGFloat = 18
     private static let openDelay: TimeInterval = 0.15
     private static let closeDelay: TimeInterval = 0.15
-    private static let scrollThreshold: CGFloat = 24
+    private static let scrollThreshold: CGFloat = 40
     /// About when an opening spring reaches 60 % of its travel.
     private static let contentDelay: CFTimeInterval = 0.12
     /// Closing: the content fades out this fast, while the shape is already retracting.
@@ -72,6 +72,8 @@ final class NotchController {
     private var recheckTimer: Timer?
     private var monitors: [Any] = []
     private var scrollAccumulated: CGFloat = 0
+    /// The current swipe already switched accounts.
+    private var scrollStepped = false
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var storeChanges: AnyCancellable?
     private var refreshQueued = false
@@ -576,19 +578,23 @@ final class NotchController {
         monitors.removeAll()
     }
 
-    /// One account per gesture step; momentum is ignored so a flick does not run through every account.
+    /// Account switching by a horizontal two-finger swipe on the trackpad only: one account per gesture, however
+    /// long. Vertical scrolling, mouse wheels and momentum are ignored (the panel was too easy to flip by accident).
     /// Returns whether the event was used.
     private func scrolled(_ event: NSEvent) -> Bool {
         guard event.window === window else { return false }
         if !event.momentumPhase.isEmpty { return true }
-        if event.phase == .began { scrollAccumulated = 0 }
-        // A mouse wheel reports lines: one notch must reach the threshold on its own.
-        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * Self.scrollThreshold
-        let deltaX = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : event.scrollingDeltaX * Self.scrollThreshold
-        scrollAccumulated += abs(deltaX) > abs(delta) ? -deltaX : delta
+        // Trackpad gestures have precise deltas and a phase; a mouse wheel has neither.
+        guard event.hasPreciseScrollingDeltas, !event.phase.isEmpty else { return true }
+        if event.phase == .began {
+            scrollAccumulated = 0
+            scrollStepped = false
+        }
+        guard !scrollStepped, abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return true }
+        scrollAccumulated -= event.scrollingDeltaX
         if abs(scrollAccumulated) >= Self.scrollThreshold {
             store.selectAccount(step: scrollAccumulated < 0 ? 1 : -1)
-            scrollAccumulated = 0
+            scrollStepped = true
         }
         return true
     }
