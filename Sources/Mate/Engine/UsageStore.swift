@@ -40,6 +40,8 @@ final class UsageStore: ObservableObject {
     private var activityTimer: Timer?
     private var watcher: FileWatcher?
     private var reconciling: Set<ProviderID> = []
+    private var indexStarted: Set<ProviderID> = []
+    private var firstRun = false
     private var reconcileAgain: Set<ProviderID> = []
     /// "provider|configDir" whose keychain prompt the user denied: no automatic credential read until `refreshNow()`.
     private var deniedDirs: Set<String> = []
@@ -55,8 +57,9 @@ final class UsageStore: ObservableObject {
         samplesByKey = persistence.load([String: [Sample]].self, "samples") ?? [:]
         alertEngine = persistence.load(AlertEngine.self, "alerts") ?? AlertEngine()
         switchHistory = persistence.load(SwitchHistory.self, "switchHistory") ?? SwitchHistory()
-        aggregates = persistence.load(UsageAggregates.self, "aggregates") ?? UsageAggregates()
-        indexer = LogIndexer(cursors: persistence.load([String: FileCursor].self, "cursors") ?? [:])
+        let state = persistence.loadIndexState()
+        aggregates = state.aggregates
+        indexer = LogIndexer(cursors: state.cursors)
         accounts = registry.accounts
         for (id, s) in snapshots { fetchState[id] = FetchState(lastAttempt: s.fetchedAt) }
         for p in providers {
@@ -78,17 +81,21 @@ final class UsageStore: ObservableObject {
         w.start()
         watcher = w
         updateActivity()
-        let firstRun = indexer.isFirstRun
+        firstRun = indexer.isFirstRun
         Task {
+            // Indexing of each provider starts from its reconcile, right after the switch history is recorded
+            // (before any keychain prompt), so events are attributed from the start.
             for p in providers { await reconcile(p) }
-            // Indexed after the reconcile so the switch history already knows each dir's account.
-            for p in providers {
-                indexer.index(p, paths: p.watchedPaths, fullScan: true,
-                              qos: firstRun ? .background : .utility) { [weak self] events, cursors in
-                    self?.ingest(events, cursors: cursors)
-                }
-            }
+            for p in providers { startIndexing(p) }
             scheduleFetches()
+        }
+    }
+
+    private func startIndexing(_ p: any Provider) {
+        guard indexStarted.insert(p.id).inserted else { return }
+        indexer.index(p, paths: p.watchedPaths, fullScan: true,
+                      qos: firstRun ? .background : .utility) { [weak self] events, cursors in
+            self?.ingest(events, cursors: cursors)
         }
     }
 
@@ -170,6 +177,7 @@ final class UsageStore: ObservableObject {
             let actions = registry.reconcile(provider: p.id, observed: scan.sessions, scannedDirs: scan.scannedDirs)
             commitRegistry()
             recordSwitches(scan.sessions, provider: p.id)
+            startIndexing(p)
             for action in actions {
                 switch action {
                 case .storeShadow(let id, let dir):
@@ -196,7 +204,7 @@ final class UsageStore: ObservableObject {
         let now = Date()
         let before = switchHistory
         for s in sessions where s.provider == id {
-            switchHistory.record(configDir: s.configDir, accountID: "\(id.rawValue):\(s.identity)", at: now)
+            switchHistory.record(configDir: s.configDir, accountID: AccountRegistry.accountID(provider: id, identity: s.identity), at: now)
         }
         if switchHistory != before { persistence.save("switchHistory") { [unowned self] in switchHistory } }
     }

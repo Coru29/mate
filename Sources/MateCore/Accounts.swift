@@ -93,6 +93,9 @@ public enum FetchPolicy {
 public struct AccountRegistry: Codable, Equatable, Sendable {
     public var accounts: [Account]
 
+    /// The id of the account of `identity` at `provider`; also the key of `SwitchHistory` and the aggregates' slices.
+    public static func accountID(provider: ProviderID, identity: String) -> String { "\(provider.rawValue):\(identity)" }
+
     public init(accounts: [Account] = []) { self.accounts = accounts }
 
     /// `observed` holds ALL sessions currently seen for `provider` across every
@@ -109,7 +112,7 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
         var done = Set<String>()
 
         for s in sessions {
-            let id = "\(provider.rawValue):\(s.identity)"
+            let id = Self.accountID(provider: provider, identity: s.identity)
             guard done.insert(id).inserted else { continue }
             let dirs = sessions.filter { $0.identity == s.identity }.map(\.configDir)
             let email = sessions.first { $0.identity == s.identity && $0.email != nil }?.email
@@ -149,7 +152,7 @@ public struct AccountRegistry: Codable, Equatable, Sendable {
     /// An account added through Mate's own login: Mate owns its tokens.
     @discardableResult
     public mutating func addLogin(provider: ProviderID, identity: String, email: String?) -> Account {
-        let id = "\(provider.rawValue):\(identity)"
+        let id = Self.accountID(provider: provider, identity: identity)
         if let i = accounts.firstIndex(where: { $0.id == id }) {
             if let e = email { accounts[i].email = e }
             return accounts[i]

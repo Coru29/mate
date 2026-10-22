@@ -32,6 +32,16 @@ final class Persistence {
         return support.appendingPathComponent("Mate", isDirectory: true)
     }
 
+    /// Aggregates and log cursors, dropped together when the persisted aggregates predate the current schema
+    /// (or are missing while cursors exist), so the logs are indexed again.
+    func loadIndexState() -> (aggregates: UsageAggregates, cursors: [String: FileCursor]) {
+        let stored = load(UsageAggregates.self, "aggregates")
+        let cursors = load([String: FileCursor].self, "cursors") ?? [:]
+        if let stored, !UsageAggregates.needsRebuild(storedVersion: stored.storedSchema) { return (stored, cursors) }
+        if stored != nil || !cursors.isEmpty { Log.info("persistence: aggregates schema changed, re-indexing the logs") }
+        return (UsageAggregates(), [:])
+    }
+
     func load<T: Decodable>(_ type: T.Type, _ name: String) -> T? {
         let url = dir.appendingPathComponent(name + ".json")
         guard let data = try? Data(contentsOf: url) else { return nil }

@@ -16,17 +16,13 @@ struct UsageView: View {
         .cursor: Color.gray, .copilot: Color.purple, .grok: Color.teal,
     ]
 
-    private var now: Date { Date() }
-
-    /// Providers with log data in the last 30 days.
-    private var providersWithData: [ProviderID] {
-        let days = store.aggregates.daily(last: 30, now: now)
-        return ProviderID.allCases.filter { p in days.contains { ($0.perProvider[p] ?? 0) > 0 } }
-    }
-
-    private var accountsOfProvider: [Account] {
-        guard let provider else { return [] }
-        return store.accounts.filter { $0.provider == provider && !$0.hidden }
+    /// Everything the body shows, computed once per render from one `now`.
+    private struct Frame {
+        let withData: [ProviderID]
+        let bars: [Bar]
+        let shown: [ProviderID]
+        let today: [(ProviderID, Int)]
+        let models: [(model: String, tokens: Int, cost: Double)]
     }
 
     private struct Bar: Identifiable {
@@ -34,34 +30,38 @@ struct UsageView: View {
         var id: String { "\(day.timeIntervalSince1970)-\(provider.rawValue)" }
     }
 
-    private var bars: [Bar] {
-        store.aggregates.daily(last: 7, now: now, account: accountID).flatMap { d in
+    private var accountsOfProvider: [Account] {
+        guard let provider else { return [] }
+        return store.accounts.filter { $0.provider == provider && !$0.hidden }
+    }
+
+    private func frame() -> Frame {
+        let now = Date()
+        let agg = store.aggregates
+        let withData = ProviderID.allCases.filter { p in agg.daily(last: 30, now: now).contains { ($0.perProvider[p] ?? 0) > 0 } }
+        let week = agg.daily(last: 7, now: now, account: accountID)
+        let bars = week.flatMap { d in
             d.perProvider.compactMap { p, n in
                 (provider == nil || provider == p) ? Bar(day: d.day, provider: p, tokens: n) : nil
             }
         }
-    }
-
-    /// Providers in the chart, in a stable order (legend and color scale).
-    private var shown: [ProviderID] { ProviderID.allCases.filter { p in bars.contains { $0.provider == p } } }
-
-    private var todayTotals: [(ProviderID, Int)] {
-        store.aggregates.daily(last: 1, now: now, account: accountID).first?.perProvider
-            .filter { provider == nil || $0.key == provider && $0.value > 0 }
-            .sorted { $0.key.rawValue < $1.key.rawValue } ?? []
-    }
-
-    private var models: [(model: String, tokens: Int, cost: Double)] {
-        store.aggregates.byModel(last: 30, now: now, provider: provider, account: accountID)
+        let today = (week.last?.perProvider ?? [:])
+            .filter { (provider == nil || $0.key == provider) && $0.value > 0 }
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+        return Frame(withData: withData, bars: bars,
+                     shown: ProviderID.allCases.filter { p in bars.contains { $0.provider == p } },
+                     today: today.map { ($0.key, $0.value) },
+                     models: agg.byModel(last: 30, now: now, provider: provider, account: accountID))
     }
 
     var body: some View {
+        let f = frame()
         VStack(alignment: .leading, spacing: 14) {
-            filters
-            todayRow
-            chartSection
+            filters(f)
+            todayRow(f)
+            chartSection(f)
             Divider()
-            modelTable
+            modelTable(f)
         }
         .padding(20)
         .frame(width: UsageWindowController.size.width, height: UsageWindowController.size.height, alignment: .topLeading)
@@ -69,11 +69,11 @@ struct UsageView: View {
 
     // MARK: Pieces
 
-    private var filters: some View {
+    private func filters(_ f: Frame) -> some View {
         HStack(spacing: 12) {
             Picker(selection: $provider) {
                 Text("Todos").tag(ProviderID?.none)
-                ForEach(providersWithData, id: \.self) { Text($0.displayName).tag(ProviderID?.some($0)) }
+                ForEach(f.withData, id: \.self) { Text($0.displayName).tag(ProviderID?.some($0)) }
             } label: { EmptyView() }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -90,13 +90,13 @@ struct UsageView: View {
         }
     }
 
-    private var todayRow: some View {
+    private func todayRow(_ f: Frame) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
             Text("Hoy").font(.headline)
-            if todayTotals.isEmpty {
+            if f.today.isEmpty {
                 Text("Sin uso registrado").foregroundStyle(.secondary)
             }
-            ForEach(todayTotals, id: \.0) { p, n in
+            ForEach(f.today, id: \.0) { p, n in
                 HStack(spacing: 6) {
                     Circle().fill(Self.providerColors[p] ?? .gray).frame(width: 8, height: 8)
                     Text(p.displayName)
@@ -107,15 +107,15 @@ struct UsageView: View {
         }
     }
 
-    private var chartSection: some View {
+    private func chartSection(_ f: Frame) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Últimos 7 días").font(.headline)
-            Chart(bars) { b in
+            Chart(f.bars) { b in
                 BarMark(x: .value("Día", b.day, unit: .day), y: .value("Tokens", b.tokens))
                     .foregroundStyle(by: .value("Proveedor", b.provider.displayName))
             }
             .chartForegroundStyleScale(
-                domain: shown.map(\.displayName), range: shown.map { Self.providerColors[$0] ?? .gray })
+                domain: f.shown.map(\.displayName), range: f.shown.map { Self.providerColors[$0] ?? .gray })
             .chartYAxis {
                 AxisMarks { value in
                     AxisGridLine()
@@ -131,7 +131,7 @@ struct UsageView: View {
         }
     }
 
-    private var modelTable: some View {
+    private func modelTable(_ f: Frame) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Últimos 30 días por modelo").font(.headline)
             ScrollView {
@@ -143,7 +143,7 @@ struct UsageView: View {
                     }
                     .font(.caption).foregroundStyle(.secondary)
                     Divider()
-                    ForEach(models, id: \.model) { m in
+                    ForEach(f.models, id: \.model) { m in
                         GridRow {
                             Text(m.model).gridColumnAlignment(.leading).lineLimit(1)
                             Text(NotchText.tokensShort(m.tokens)).monospacedDigit()

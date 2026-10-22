@@ -137,10 +137,7 @@ final class ClaudeProvider: Provider, @unchecked Sendable {
     }
 
     func configDir(forLogFile path: String) -> String? {
-        configDirs.first { dir in
-            let root = projectsDir(dir)
-            return [root, URL(fileURLWithPath: root).resolvingSymlinksInPath().path].contains { path.hasPrefix($0 + "/") }
-        }
+        LogDirs.configDir(forLogFile: path, roots: configDirs.map { (dir: $0, root: projectsDir($0)) })
     }
 
     func logEvents(changedPaths: [String], cursors: inout [String: FileCursor]) -> (events: [TokenEvent], more: Bool) {

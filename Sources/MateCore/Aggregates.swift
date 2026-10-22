@@ -47,6 +47,13 @@ public struct UsageAggregates: Codable, Sendable {
     static let liveWindow: TimeInterval = 120
     static let bucketRetentionDays = 400
 
+    /// Bump when the persisted shape gains data that only a re-index can fill.
+    public static let schemaVersion = 2
+
+    /// True when persisted aggregates (and their file cursors) must be dropped so the logs are indexed again.
+    public static func needsRebuild(storedVersion: Int?) -> Bool { storedVersion != schemaVersion }
+
+    public internal(set) var storedSchema: Int? = UsageAggregates.schemaVersion
     var buckets: [Bucket] = []
     var raw: [TokenEvent] = []
     var newest: Date?

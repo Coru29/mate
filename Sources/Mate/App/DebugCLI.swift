@@ -100,10 +100,12 @@ enum DebugCLI {
     /// `--index`: indexes the Claude logs only (no keychain, no network) into the data dir, prints totals and peak
     /// memory, and exits. For measuring the first-launch scan.
     static func index() -> Never {
+        requireDataDir()
         let persistence = Persistence(dir: Persistence.defaultDir(fake: false))
         let provider = ClaudeProvider()
-        let indexer = LogIndexer(cursors: persistence.load([String: FileCursor].self, "cursors") ?? [:])
-        var aggregates = persistence.load(UsageAggregates.self, "aggregates") ?? UsageAggregates()
+        let state = persistence.loadIndexState()
+        let indexer = LogIndexer(cursors: state.cursors)
+        var aggregates = state.aggregates
         var count = 0
         let started = Date()
         indexer.index(provider, paths: provider.watchedPaths, fullScan: true, qos: .utility, deliver: { events, cursors in
@@ -128,10 +130,12 @@ enum DebugCLI {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         guard let date = f.date(from: day) else { print("bad day '\(day)', expected YYYY-MM-DD"); exit(2) }
+        requireDataDir()
         let persistence = Persistence(dir: Persistence.defaultDir(fake: false))
         let provider = ClaudeProvider()
-        let indexer = LogIndexer(cursors: persistence.load([String: FileCursor].self, "cursors") ?? [:])
-        var aggregates = persistence.load(UsageAggregates.self, "aggregates") ?? UsageAggregates()
+        let state = persistence.loadIndexState()
+        let indexer = LogIndexer(cursors: state.cursors)
+        var aggregates = state.aggregates
         indexer.index(provider, paths: provider.watchedPaths, fullScan: true, qos: .userInitiated, deliver: { events, cursors in
             for e in events { aggregates.add(e) }
             persistence.save("aggregates") { aggregates }
@@ -151,6 +155,13 @@ enum DebugCLI {
             exit(0)
         })
         dispatchMain()
+    }
+
+    /// Debug runs that write indexes must never touch the real data dir.
+    private static func requireDataDir() {
+        guard ProcessInfo.processInfo.environment["MATE_DATA_DIR"]?.isEmpty ?? true else { return }
+        print("refusing to run: set MATE_DATA_DIR to a scratch directory (debug runs never touch the real data dir)")
+        exit(2)
     }
 
     static func render(accounts: [Account], snapshots: [String: UsageSnapshot]) -> String {
