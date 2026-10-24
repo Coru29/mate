@@ -15,6 +15,7 @@ struct PanelView: View {
     /// The welcome guide's "Mate vive acá" line, on the first opening only.
     var hint = false
     let onHeader: () -> Void
+    @ObservedObject private var awake = KeepAwake.shared
 
     var body: some View {
         let now = Date()
@@ -33,6 +34,7 @@ struct PanelView: View {
                         .foregroundStyle(NotchPalette.muted)
                 }
                 live(account.provider, now: now)
+                keepAwakeRow
             } else {
                 Text("No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración.")
                     .font(.system(size: 12.5))
@@ -191,6 +193,34 @@ struct PanelView: View {
                 .font(.system(size: 12))
                 .help(ifLive: session == nil ? nil : liveHelp(provider))
             }
+        }
+    }
+
+    /// Who keeps the Mac awake (Mate while agents work, or another app); hidden when nobody does and the option is
+    /// off. Status only: the switch lives in Configuración and the right-click menu.
+    @ViewBuilder
+    private var keepAwakeRow: some View {
+        if let text = awake.statusText {
+            HStack(spacing: 7) {
+                if let glyph = MateIconView.glyph {
+                    Image(nsImage: glyph)
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                        .overlay(alignment: .bottomTrailing) {
+                            if awake.showsDot {
+                                Circle().fill(Tone.ok.color).frame(width: 5, height: 5)
+                            }
+                        }
+                }
+                Text(verbatim: text)
+                    .fontWeight(.medium)
+                    .foregroundStyle(awake.showsDot ? NotchPalette.onNotch : NotchPalette.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12))
+            .padding(.top, -4)
         }
     }
 

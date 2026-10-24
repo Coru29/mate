@@ -56,24 +56,26 @@ extension NSScreen {
     }
 }
 
-/// The window's content: the black shape as two `CAShapeLayer`s (the body: notch, panel or alert; and the ear: the
-/// pill's part right of the notch), plus hover and click handling for the whole window. Two parts let the body grow
-/// symmetrically out of the notch while the ear retracts into it. Hover comes from an `NSTrackingArea`, never from a
+/// The window's content: the black shape as three `CAShapeLayer`s (the body: notch, panel or alert; the ear: the
+/// pill's part right of the notch; the left ear: the mate's, its mirror), plus hover and click handling for the whole
+/// window. Separate parts let the body grow symmetrically out of the notch while the ears retract into it. Hover comes from an `NSTrackingArea`, never from a
 /// global monitor.
 final class NotchShapeView: NSView {
     var onHover: (Bool) -> Void = { _ in }
     var onClick: (NSEvent) -> Void = { _ in }
     var onRightClick: (NSEvent) -> Void = { _ in }
 
-    enum Part { case body, ear }
+    enum Part: CaseIterable { case body, ear, leftEar }
 
     private let body = CAShapeLayer()
     private let ear = CAShapeLayer()
+    private let leftEar = CAShapeLayer()
     /// Holds the pill, panel and alert views; masked by the same paths as the black shape, so content never shows
     /// outside it while the shape morphs (the pill slides out of the notch, the panel is uncovered as it grows).
     let content = NotchContentView()
     private let clipBody = CAShapeLayer()
     private let clipEar = CAShapeLayer()
+    private let clipLeftEar = CAShapeLayer()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -81,15 +83,17 @@ final class NotchShapeView: NSView {
         // Barely there, so the window server routes the mouse to the whole frame even where nothing is drawn
         // (the hover strip over a hidden fake notch).
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.004).cgColor
-        for l in [body, ear, clipBody, clipEar] { l.fillColor = NSColor.black.cgColor }
+        for l in [body, ear, leftEar, clipBody, clipEar, clipLeftEar] { l.fillColor = NSColor.black.cgColor }
         layer?.addSublayer(body)
         layer?.addSublayer(ear)
+        layer?.addSublayer(leftEar)
         content.frame = bounds
         content.autoresizingMask = [.width, .height]
         addSubview(content)
         let clip = CALayer()
         clip.addSublayer(clipBody)
         clip.addSublayer(clipEar)
+        clip.addSublayer(clipLeftEar)
         content.layer?.mask = clip
     }
 
@@ -132,7 +136,11 @@ final class NotchShapeView: NSView {
     }
 
     private func layers(_ part: Part) -> [CAShapeLayer] {
-        part == .body ? [body, clipBody] : [ear, clipEar]
+        switch part {
+        case .body: [body, clipBody]
+        case .ear: [ear, clipEar]
+        case .leftEar: [leftEar, clipLeftEar]
+        }
     }
 
     func isAnimating(_ part: Part) -> Bool { layers(part)[0].animation(forKey: "path") != nil }
@@ -176,7 +184,8 @@ final class NotchShapeView: NSView {
     }
 
     /// Reduce Motion: the new state crossfades in, nothing moves.
-    func crossfade(body bodyPath: CGPath, ear earPath: CGPath?, completion: @escaping () -> Void) {
+    func crossfade(body bodyPath: CGPath, ear earPath: CGPath?, leftEar leftPath: CGPath?,
+                   completion: @escaping () -> Void) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let fade = CATransition()
@@ -184,7 +193,7 @@ final class NotchShapeView: NSView {
         fade.duration = 0.2
         CATransaction.setCompletionBlock(completion)
         layer?.add(fade, forKey: "crossfade")
-        for (part, path) in [(Part.body, Optional(bodyPath)), (.ear, earPath)] {
+        for (part, path) in [(Part.body, Optional(bodyPath)), (.ear, earPath), (.leftEar, leftPath)] {
             for l in layers(part) {
                 l.removeAnimation(forKey: "path")
                 l.path = path

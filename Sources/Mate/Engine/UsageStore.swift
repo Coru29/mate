@@ -8,6 +8,9 @@ final class UsageStore: ObservableObject {
     @Published private(set) var accounts: [Account] = []
     @Published private(set) var snapshots: [String: UsageSnapshot] = [:]
     @Published private(set) var activeProvider: ProviderID?
+    /// Providers whose agents are working now (log writes in the last two minutes, Cursor in front), most recent
+    /// first; unlike `activeProvider`, an always-active provider does not count. Drives "keep the Mac awake".
+    @Published private(set) var workingProviders: [ProviderID] = []
     @Published var selectedAccountID: String?
     @Published private(set) var aggregates = UsageAggregates()
     /// While paused nothing is fetched on a schedule and the agents' files are not watched.
@@ -800,7 +803,9 @@ final class UsageStore: ObservableObject {
 
     private func updateActivity() {
         let now = Date()
-        let active = activity.activeProviders(now: now).first ?? providers.first { $0.alwaysActive }?.id
+        let working = activity.activeProviders(now: now)
+        if Set(working) != Set(workingProviders) { workingProviders = working }
+        let active = working.first ?? providers.first { $0.alwaysActive }?.id
         if activeProvider != active { activeProvider = active }
         activityTimer?.invalidate()
         activityTimer = nil

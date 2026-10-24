@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.store = store
         self.notch = notch
         self.backend = backend
+        KeepAwake.shared.start(store: store)
         if DebugCLI.isHeadless {
             // Test runs: no notch, no guide, no window of any kind on the user's screen; only `--fake` fetches.
             store.onAlert = { event in Log.info("alert \(event.kind) \(event.accountID) (headless)") }
@@ -98,6 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { store?.flush() }
+        MainActor.assumeIsolated {
+            KeepAwake.shared.stop()
+            store?.flush()
+        }
     }
 }

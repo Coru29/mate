@@ -12,4 +12,6 @@ enum NotchPrefs {
     static var systemNotifications: Bool { value(.systemNotifications) ?? false }
     static var providerOrder: [String] { value(.providerOrder) ?? [] }
     static var disabledProviders: [String] { value(.disabledProviders) ?? [] }
+    static var showMateIcon: Bool { value(.showMateIcon) ?? true }
+    static var keepAwake: Bool { value(.keepAwake) ?? false }
 }

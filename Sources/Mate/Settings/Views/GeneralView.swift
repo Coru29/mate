@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import MateCore
 
-/// "General": launch at login, which screen, when the pill shows, language.
+/// "General": launch at login, which screen, when the pill and the mate show, keeping the Mac awake, language.
 struct GeneralView: View {
     @ObservedObject var backend: SettingsBackend
 
@@ -31,8 +31,15 @@ struct GeneralView: View {
                     Text("Solo con un agente activo").tag(false)
                     Text("Siempre").tag(true)
                 }
+                Toggle("Mostrar el mate junto al notch", isOn: backend.binding(.showMateIcon, default: true))
             } footer: {
                 Text("Sin notch, Mate dibuja uno propio arriba al centro. Pasar el mouse por el notch abre el panel aunque el pill no se vea.")
+            }
+            Section {
+                Toggle("Mantener la Mac despierta mientras trabajan los agentes",
+                       isOn: backend.binding(.keepAwake, default: false))
+            } footer: {
+                Text("Evita que la Mac se duerma sola mientras un agente trabaja. La pantalla puede apagarse igual.")
             }
             Section {
                 Picker("Idioma", selection: Binding(get: { backend.language }, set: { backend.language = $0 })) {

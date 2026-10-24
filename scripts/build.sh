@@ -12,6 +12,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Mate"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" Packaging/Info.plist > "$APP/Contents/Info.plist"
 cp Packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# The mate left of the notch (scripts/make-mate-sprite.swift).
+cp Packaging/mate-sprite.png "$APP/Contents/Resources/mate-sprite.png"
 # Spanish is the source language (the keys); English comes from en.lproj and is also the fallback for other languages.
 cp -R Packaging/en.lproj Packaging/es.lproj "$APP/Contents/Resources/"
 scripts/sign.sh "$APP"

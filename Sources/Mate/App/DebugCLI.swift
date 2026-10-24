@@ -204,6 +204,7 @@ enum DebugCLI {
         let store = makeStore()
         await store.runOnce()
         print(render(accounts: store.accounts, snapshots: store.snapshots))
+        print(KeepAwake.dumpLine())
         exit(0)
     }
 

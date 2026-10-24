@@ -258,3 +258,13 @@
 "Tenés la %@. Mate se descarga, se reemplaza y se vuelve a abrir; los permisos del llavero se mantienen." = "Tenés la %@. Mate se descarga, se reemplaza y se vuelve a abrir; los permisos del llavero se mantienen.";
 "Tenés la última versión" = "Tenés la última versión";
 "Ver en GitHub" = "Ver en GitHub";
+
+/* Mate next to the notch and keeping the Mac awake */
+"Mostrar el mate junto al notch" = "Mostrar el mate junto al notch";
+"Mantener la Mac despierta mientras trabajan los agentes" = "Mantener la Mac despierta mientras trabajan los agentes";
+"Evita que la Mac se duerma sola mientras un agente trabaja. La pantalla puede apagarse igual." = "Evita que la Mac se duerma sola mientras un agente trabaja. La pantalla puede apagarse igual.";
+"Mac despierta · agentes trabajando" = "Mac despierta · agentes trabajando";
+"caffeinate activo desde una terminal" = "caffeinate activo desde una terminal";
+"caffeinate activo" = "caffeinate activo";
+"%@ mantiene la Mac despierta" = "%@ mantiene la Mac despierta";
+"La Mac va a quedar despierta mientras trabajen los agentes" = "La Mac va a quedar despierta mientras trabajen los agentes";

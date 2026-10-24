@@ -3,7 +3,7 @@ import AppKit
 /// `--snapshot-anim <dir>`: opens the panel 1.5 s after launch, swipes to the next account at 2.6 s and closes it
 /// at 4 s, rendering what is on screen (the layers' presentation, mid-animation) to PNGs: the open at a few moments,
 /// the slide every 32 ms, the close every 16 ms. At 5.5 s it starts hiding the pill and cancels the hide 40 ms later
-/// (pill-*.png: the pill must end visible).
+/// (pill-*.png: the pill must end visible). At 7 s the mate takes a sip (sip-*.png, through the whole animation).
 /// `--trace-anim <dir>`: the same open and close without PNGs; a display link (only while each animation runs)
 /// writes one line per frame to open-trace.txt / close-trace.txt: time since start, gap since the previous frame,
 /// the window frame and the body's on-screen bounds. In-process, no screen recording.
@@ -59,6 +59,13 @@ extension NotchController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { self?.debugSetPillHidden(false) }
             for t in [0.02, 0.1, 0.3, 1.0] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/pill-\(Int(t * 1000))ms.png") }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
+            self?.debugSip()
+            for t in [0.0, 0.4, 0.9, 1.3, 1.6, 1.9, 2.2, 2.5, 3.0] {
+                let name = String(format: "sip-%04dms.png", Int((t * 1000).rounded()))
+                DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/\(name)") }
             }
         }
     }

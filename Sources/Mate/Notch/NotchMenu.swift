@@ -1,4 +1,5 @@
 import AppKit
+import MateCore
 
 /// The right-click menu on the notch, the pill or the panel.
 extension NotchController {
@@ -17,6 +18,12 @@ extension NotchController {
         menu.addItem(ClosureMenuItem(paused ? String(localized: "Reanudar") : String(localized: "Pausar")) { [weak self] in
             self?.store.setPaused(!paused)
         })
+        let awake = NotchPrefs.keepAwake
+        let keepAwake = ClosureMenuItem(String(localized: "Mantener la Mac despierta mientras trabajan los agentes")) {
+            UserDefaults.mate.set(!awake, forKey: PrefKey.keepAwake.rawValue)
+        }
+        keepAwake.state = awake ? .on : .off
+        menu.addItem(keepAwake)
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(String(localized: "Salir de Mate")) { NSApp.terminate(nil) })
         // Synchronous: returns when the menu closes.

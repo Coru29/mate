@@ -30,6 +30,7 @@ final class NotchController {
     let window = NotchWindow()
     let root = NotchShapeView()
     private let pill = PillView()
+    private let mate = MateIconView()
     private let banner = AlertBanner()
 
     private var screenInfo: ScreenInfo?
@@ -37,8 +38,14 @@ final class NotchController {
     private var fakeNotch = false
     private var menuBarVisible = true
     private var pillShown = false
-    /// The pill view is on screen (not faded out); it hides while the panel or an alert is open.
+    /// The pill view is on screen (not faded out); it hides while the panel or an alert is open. The mate follows it.
     private var pillVisible = false
+    /// "Mostrar el mate junto al notch": the mate's ear shows left of the notch whenever the pill shows.
+    private var showMate = NotchPrefs.showMateIcon
+    /// The next sip of the mate (one-shot, armed only while agents work and the mate's ear shows).
+    private var sipTimer: Timer?
+    /// An agent worked since the sip timer was armed.
+    private var sawActivity = false
     /// `--snapshot-anim`: hides the pill as if it had no reason to show, to check interrupted hides.
     private var debugHidePill = false
     /// The pill shows a weekly window instead of the session, with a tag (and a wider shape).
@@ -55,6 +62,8 @@ final class NotchController {
     private var shapeRadius = closedRadius
     /// Target of the pill's ear (the black part right of the notch), in screen coordinates; nil when not drawn.
     private var earRect: CGRect?
+    /// Target of the mate's ear (left of the notch); nil when not drawn.
+    private var leftEarRect: CGRect?
     private var panelRect = CGRect.zero
     private var alertRect = CGRect.zero
     /// Bumped by every shape transition, so a superseded animation's completion does nothing.
@@ -98,6 +107,7 @@ final class NotchController {
         }
         window.contentView = root
         root.content.addSubview(pill)
+        root.content.addSubview(mate)
         root.onHover = { [weak self] inside in self?.hoverChanged(inside) }
         root.onClick = { [weak self] event in self?.clicked(event) }
         root.onRightClick = { [weak self] event in self?.showMenu(event) }
@@ -108,6 +118,7 @@ final class NotchController {
         observe(workspace, NSWorkspace.activeSpaceDidChangeNotification) { $0.spaceChanged() }
         observe(center, UserDefaults.didChangeNotification) { $0.preferencesChanged() }
         observeStore()
+        observeKeepAwake()
 
         layout()
         window.orderFrontRegardless()
@@ -148,6 +159,8 @@ final class NotchController {
         cancel(&closeTimer)
         if mode == .alert { removeAlertView() }
         closing = false
+        // Before the page is built, so its keep-awake row is measured with the panel's first height.
+        KeepAwake.shared.checkExternal()
         // The controller lives as long as the app.
         let container = PanelPager(store: store, accountID: store.panelAccount?.id) { [unowned self] id, hasDots in
             self.makePanel(accountID: id, hasDots: hasDots)
@@ -225,6 +238,7 @@ final class NotchController {
         shapeRect = closedRect
         shapeRadius = Self.closedRadius
         earRect = pillShown ? pillEar : nil
+        leftEarRect = mateShown ? mateEar : nil
         pillVisible = pillShown
         setWindowFrame(stripRect)
         if !window.isVisible { window.orderFrontRegardless() }
@@ -245,8 +259,9 @@ final class NotchController {
         closing = false
         generation += 1
         flushRetired()
-        // A hide that was in flight must not leave the pill held invisible.
+        // A hide that was in flight must not leave the pill (or the mate) held invisible.
         NotchMotion.restore(pill)
+        NotchMotion.restore(mate)
     }
 
     private var pillRect: CGRect { NotchLayout.pillRect(notch: notch, tagged: pillTagged) }
@@ -255,7 +270,7 @@ final class NotchController {
     /// A fake notch with the menu bar hidden (another app in full screen) keeps only a 2 pt edge at the very top,
     /// so it takes no clicks from that app.
     private var stripRect: CGRect {
-        if pillShown { return notch.union(pillRect) }
+        if pillShown { return notch.union(pillRect).union(showMate ? mateRect : .null) }
         if fakeNotch && !menuBarVisible { return CGRect(x: notch.minX, y: notch.maxY - 2, width: notch.width, height: 2) }
         return notch
     }
@@ -279,6 +294,21 @@ final class NotchController {
         CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
     }
 
+    /// The mate's ear shows with the pill, when the preference is on.
+    private var mateShown: Bool { pillShown && showMate }
+
+    private var mateRect: CGRect { NotchLayout.mateRect(notch: notch) }
+
+    /// The mate's ear, the mirror of `pillEar`: it ends inside the notch, past the notch's rounded corner.
+    private var mateEar: CGRect {
+        CGRect(x: mateRect.minX, y: notch.minY, width: mateRect.width + 2 * Self.closedRadius, height: notch.height)
+    }
+
+    /// The mate's ear retracted into the notch.
+    private var tuckedLeftEar: CGRect {
+        CGRect(x: notch.minX, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
+    }
+
     private func local(_ rect: CGRect) -> CGRect {
         rect.offsetBy(dx: -window.frame.minX, dy: -window.frame.minY)
     }
@@ -297,18 +327,23 @@ final class NotchController {
             root.frame = CGRect(origin: .zero, size: window.frame.size)
         }
         pill.frame = local(pillRect)
-        if pillVisible || final { pill.isHidden = !pillVisible }
+        mate.frame = local(NotchLayout.mateIconRect(notch: notch))
+        if pillVisible || final {
+            pill.isHidden = !pillVisible
+            mate.isHidden = !(pillVisible && showMate)
+        }
         panelView?.frame = local(panelRect)
         alertView?.frame = local(CGRect(x: alertRect.minX, y: alertRect.minY, width: alertRect.width,
                                         height: AlertBanner.lineHeight))
         root.set(.body, NotchShapeView.path(local(shapeRect), radius: shapeRadius))
         root.set(.ear, earRect.map { NotchShapeView.path(local($0), radius: Self.closedRadius) })
+        root.set(.leftEar, leftEarRect.map { NotchShapeView.path(local($0), radius: Self.closedRadius) })
         syncHover()
     }
 
     private enum Ear { case keep, show, hide }
 
-    /// Morphs the body to `target` (and the ear out of or into the notch) with the top edge pinned to the screen
+    /// Morphs the body to `target` (and the ears out of or into the notch) with the top edge pinned to the screen
     /// top. The window is set once to hold both shapes (with room for the spring's overshoot sideways and downward,
     /// never upward), the shape animates inside it, and the window shrinks to the final shape when both parts end.
     private func transition(to target: CGRect, radius: CGFloat, spring: NotchShapeView.Spring = .open,
@@ -318,20 +353,21 @@ final class NotchController {
         let oldOrigin = window.frame.origin
         let bodyInFlight = root.isAnimating(.body) ? root.presentedPath(.body) : nil
         let earInFlight = root.isAnimating(.ear) ? root.presentedPath(.ear) : nil
+        let leftInFlight = root.isAnimating(.leftEar) ? root.presentedPath(.leftEar) : nil
         let fromRect = visual(shapeRect), fromRadius = shapeRadius
         let toRect = visual(target)
-        let oldEar = earRect
-        let newEar: CGRect?
+        let oldEar = earRect, oldLeft = leftEarRect
+        let newEar: CGRect?, newLeft: CGRect?
         switch ear {
-        case .keep: newEar = oldEar
-        case .show: newEar = pillEar
-        case .hide: newEar = nil
+        case .keep: (newEar, newLeft) = (oldEar, oldLeft)
+        case .show: (newEar, newLeft) = (pillEar, showMate ? mateEar : nil)
+        case .hide: (newEar, newLeft) = (nil, nil)
         }
 
         // Room for an underdamped spring's overshoot; a critically damped one (closing) needs none. When the window
         // already holds everything (closing from the panel) it is left alone: no resize at the start of the motion.
         let both = fromRect.union(toRect).union(shapeRect).union(target).union(stripRect)
-            .union(oldEar ?? .null).union(newEar ?? .null)
+            .union(oldEar ?? .null).union(newEar ?? .null).union(oldLeft ?? .null).union(newLeft ?? .null)
         let slack: CGFloat = spring.damping < 1 ? 12 : 0
         let needed = CGRect(x: both.minX - slack, y: both.minY - slack, width: both.width + 2 * slack,
                             height: both.height + slack).integral
@@ -339,6 +375,7 @@ final class NotchController {
         shapeRect = target
         shapeRadius = radius
         earRect = newEar
+        leftEarRect = newLeft
 
         // An interrupted animation continues from where it is, moved into the new window's coordinates.
         var shift = CGAffineTransform(translationX: oldOrigin.x - window.frame.minX, y: oldOrigin.y - window.frame.minY)
@@ -348,19 +385,25 @@ final class NotchController {
             ?? NotchShapeView.path(local(oldEar ?? tuckedEar), radius: Self.closedRadius)
         let earTo = NotchShapeView.path(local(newEar ?? tuckedEar), radius: Self.closedRadius)
         let moveEar = oldEar != nil || newEar != nil
+        let leftFrom = leftInFlight?.copy(using: &shift)
+            ?? NotchShapeView.path(local(oldLeft ?? tuckedLeftEar), radius: Self.closedRadius)
+        let leftTo = NotchShapeView.path(local(newLeft ?? tuckedLeftEar), radius: Self.closedRadius)
+        let moveLeft = oldLeft != nil || newLeft != nil
 
         let finish = { [weak self] in
             guard let self, gen == self.generation else { return }
             self.flushRetired()
-            self.setWindowFrame(target.union(self.stripRect).union(self.earRect ?? .null))
+            self.setWindowFrame(target.union(self.stripRect).union(self.earRect ?? .null)
+                .union(self.leftEarRect ?? .null))
             completion?()
         }
         if NotchMotion.reduceMotion {
             root.crossfade(body: to, ear: newEar.map { NotchShapeView.path(local($0), radius: Self.closedRadius) },
+                           leftEar: newLeft.map { NotchShapeView.path(local($0), radius: Self.closedRadius) },
                            completion: finish)
             return
         }
-        var pending = moveEar ? 2 : 1
+        var pending = 1 + (moveEar ? 1 : 0) + (moveLeft ? 1 : 0)
         let partDone = {
             pending -= 1
             if pending == 0 { finish() }
@@ -368,6 +411,10 @@ final class NotchController {
         root.animate(.body, from: from, to: to, spring: spring, delay: delay, completion: partDone)
         if moveEar {
             root.animate(.ear, from: earFrom, to: earTo, spring: newEar == nil ? .close : spring, delay: delay,
+                         completion: partDone)
+        }
+        if moveLeft {
+            root.animate(.leftEar, from: leftFrom, to: leftTo, spring: newLeft == nil ? .close : spring, delay: delay,
                          completion: partDone)
         }
     }
@@ -384,7 +431,7 @@ final class NotchController {
             self.closing = false
             // The pill may have appeared or gone, or the menu bar changed, while closing.
             if self.shapeRect != self.closedRect || (self.earRect != nil) != self.pillShown
-                || self.pillVisible != self.pillShown {
+                || (self.leftEarRect != nil) != self.mateShown || self.pillVisible != self.pillShown {
                 self.transitionClosed()
             }
             // Hand the keyboard back to the app the user was in (the panel became key only through a click).
@@ -404,18 +451,25 @@ final class NotchController {
                    delay: pillShown ? 0 : 0.05, ear: pillShown ? .show : .hide)
     }
 
-    /// Makes the pill visible, cancelling any held or in-flight fade-out; fades it in if it was not visible.
+    /// Makes the pill (and the mate) visible, cancelling any held or in-flight fade-out; fades them in if they were
+    /// not visible.
     private func showPill(revealDelay: CFTimeInterval = 0.1) {
         pill.isHidden = false
-        NotchMotion.restore(pill)
-        if !pillVisible { NotchMotion.reveal(pill, delay: revealDelay, duration: 0.14) }
+        mate.isHidden = !showMate
+        for view in [pill, mate] {
+            NotchMotion.restore(view)
+            if !pillVisible { NotchMotion.reveal(view, delay: revealDelay, duration: 0.14) }
+        }
         pillVisible = true
     }
 
-    /// Fades the pill out and holds it invisible until `showPill`.
+    /// Fades the pill (and the mate) out and holds them invisible until `showPill`.
     private func hidePill() {
         if pillVisible {
-            if NotchMotion.reduceMotion { pill.isHidden = true } else { NotchMotion.fadeOut(pill, duration: 0.08) }
+            for view in [pill, mate] {
+                if NotchMotion.reduceMotion { view.isHidden = true } else { NotchMotion.fadeOut(view, duration: 0.08) }
+            }
+            mate.stop()
         }
         pillVisible = false
     }
@@ -454,6 +508,7 @@ final class NotchController {
             on(.accounts, store.$accounts), on(.snapshots, store.$snapshots),
             on(.activeProvider, store.$activeProvider), on(.selection, store.$selectedAccountID),
             on(.paused, store.$isPaused), on(.aggregates, store.$aggregates),
+            on(.activeProvider, store.$workingProviders),
         ]
     }
 
@@ -473,6 +528,8 @@ final class NotchController {
         guard screenInfo != nil else { return }
         let wasShown = pillShown, wasTagged = pillTagged
         updatePill()
+        mate.showsDot = KeepAwake.shared.showsDot
+        updateSip()
         switch mode {
         case .closed:
             if (wasShown != pillShown || (pillShown && wasTagged != pillTagged)) && !closing { transitionClosed() }
@@ -521,6 +578,55 @@ final class NotchController {
             [weak self] in self?.onOpenUsage()
         }
     }
+
+    // MARK: Mate
+
+    /// The mate's dot and the panel's keep-awake row follow `KeepAwake`; the mate sips once when keep-awake engages.
+    private func observeKeepAwake() {
+        let awake = KeepAwake.shared
+        storeChanges.append(awake.objectWillChange.sink { [weak self] _ in self?.queueRefresh() })
+        storeChanges.append(awake.$held.removeDuplicates().dropFirst().sink { [weak self] held in
+            if held { self?.sip() }
+        })
+    }
+
+    /// The mate is on screen, at rest or sipping.
+    private var mateVisible: Bool { mode == .closed && !closing && pillVisible && showMate }
+
+    /// Plays one sip if the mate is on screen (never with Reduce Motion).
+    private func sip() {
+        guard MateSip.shouldPlay(mateVisible: mateVisible, sawActivity: true, reduceMotion: NotchMotion.reduceMotion)
+        else { return }
+        mate.play()
+    }
+
+    /// Arms the next sip (12 to 25 minutes) while agents work and the mate's ear shows; cancels it otherwise. While
+    /// armed and the agents go idle, it stays: it fires once, plays if an agent worked meanwhile, and re-arms only if
+    /// they are still working.
+    private func updateSip() {
+        let working = !store.workingProviders.isEmpty
+        let reduce = NotchMotion.reduceMotion
+        guard mateShown, !reduce else {
+            cancel(&sipTimer)
+            return
+        }
+        if working { sawActivity = true }
+        guard sipTimer == nil, MateSip.shouldArm(earShown: mateShown, agentsActive: working, reduceMotion: reduce)
+        else { return }
+        sipTimer = oneShot(MateSip.delay(unit: Double.random(in: 0...1))) { [weak self] in self?.sipFired() }
+    }
+
+    private func sipFired() {
+        sipTimer = nil
+        if MateSip.shouldPlay(mateVisible: mateVisible, sawActivity: sawActivity, reduceMotion: NotchMotion.reduceMotion) {
+            mate.play()
+        }
+        sawActivity = false
+        updateSip()
+    }
+
+    /// `--snapshot-anim`: starts a sip now, whatever the schedule.
+    func debugSip() { mate.play() }
 
     // MARK: Alerts
 
@@ -719,9 +825,12 @@ final class NotchController {
             layout()
         }
         let always = NotchPrefs.showPillAlways
-        if always != showAlways {
+        let withMate = NotchPrefs.showMateIcon
+        if always != showAlways || withMate != showMate {
             showAlways = always
+            showMate = withMate
             refreshClosedShape()
+            updateSip()
         }
         // The pill and an open panel follow the provider order and the enabled providers.
         let providers = (NotchPrefs.providerOrder, NotchPrefs.disabledProviders)
