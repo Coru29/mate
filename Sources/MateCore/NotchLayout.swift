@@ -34,6 +34,10 @@ public enum NotchLayout {
     /// Extra room for the "sem" tag when the pill shows a window other than the session.
     static let pillTagWidth: CGFloat = 24
     static let panelWidth: CGFloat = 380
+    /// The mate's ear left of the notch: an 18 pt mate with the ring's 7 pt padding on each side.
+    public static let mateEarWidth: CGFloat = 32
+    /// The mate's sprite cell (the gourd fills about 18 pt of it; the thermos pours in from its top).
+    public static let mateIconSize: CGFloat = 24
 
     public static func pickScreen(_ screens: [ScreenInfo], choice: ScreenChoice, mouseScreen: UInt32?) -> ScreenInfo? {
         let main = screens.first(where: \.hasMenuBar) ?? screens.first
@@ -63,6 +67,18 @@ public enum NotchLayout {
 
     public static func pillRect(notch: CGRect, tagged: Bool = false) -> CGRect {
         CGRect(x: notch.maxX, y: notch.minY, width: pillWidth + (tagged ? pillTagWidth : 0), height: notch.height)
+    }
+
+    /// The mate's ear, the mirror of the pill left of the notch.
+    public static func mateRect(notch: CGRect) -> CGRect {
+        CGRect(x: notch.minX - mateEarWidth, y: notch.minY, width: mateEarWidth, height: notch.height)
+    }
+
+    /// The sprite cell, centered in the mate's ear.
+    public static func mateIconRect(notch: CGRect) -> CGRect {
+        let ear = mateRect(notch: notch)
+        return CGRect(x: ear.midX - mateIconSize / 2, y: ear.midY - mateIconSize / 2, width: mateIconSize,
+                      height: mateIconSize)
     }
 
     public static func panelRect(notch: CGRect, contentHeight: CGFloat, screen: ScreenInfo) -> CGRect {

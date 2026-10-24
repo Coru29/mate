@@ -69,6 +69,18 @@ import Testing
         #expect(!NotchLayout.hoverContains(.null, CGPoint(x: 960, y: 1080)))
     }
 
+    @Test func mateEarLeftOfNotch() {
+        let n = NotchLayout.notchRect(on: macbook()).rect
+        // 7 pt of padding each side of an 18 pt mate, like the ring's padding on the right.
+        #expect(NotchLayout.mateEarWidth == 32)
+        #expect(NotchLayout.mateRect(notch: n) == CGRect(x: 630, y: 950, width: 32, height: 32))
+        // The 24 pt sprite cell is centered in the ear, and vertically in the notch.
+        #expect(NotchLayout.mateIconRect(notch: n) == CGRect(x: 634, y: 954, width: 24, height: 24))
+        // Fake notch too.
+        let f = NotchLayout.notchRect(on: external()).rect
+        #expect(NotchLayout.mateRect(notch: f) == CGRect(x: f.minX - 32, y: f.minY, width: 32, height: 32))
+    }
+
     @Test func taggedPillIsWider() {
         let n = NotchLayout.notchRect(on: macbook()).rect
         #expect(NotchLayout.pillRect(notch: n, tagged: true) == CGRect(x: 850, y: 950, width: 80, height: 32))

@@ -16,6 +16,10 @@ public enum PrefKey: String, CaseIterable, Sendable {
     case hasOnboarded
     /// Providers whose alerts are off (raw values).
     case alertsDisabledProviders
+    /// The mate left of the notch, next to the pill.
+    case showMateIcon
+    /// Hold a "prevent idle sleep" assertion while agents work.
+    case keepAwake
 }
 
 public enum Preferences {
@@ -34,6 +38,8 @@ public enum Preferences {
         PrefKey.grokMonthlyBudget.rawValue: 0.0,
         PrefKey.hasOnboarded.rawValue: false,
         PrefKey.alertsDisabledProviders.rawValue: [String](),
+        PrefKey.showMateIcon.rawValue: true,
+        PrefKey.keepAwake.rawValue: false,
     ]
 
     /// Every provider in the stored order (unknown and repeated names dropped), the missing ones appended in their
