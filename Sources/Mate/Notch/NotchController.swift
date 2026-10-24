@@ -20,6 +20,8 @@ final class NotchController {
     private static let contentFadeOut: CFTimeInterval = 0.08
     /// Closing: the pill fades back in from about 40 % of the retract.
     private static let pillReturnDelay: CFTimeInterval = 0.09
+    /// Keep-awake engaged: the mate sips once the ears' opening spring has settled.
+    private static let sipAfterEngage: TimeInterval = 0.8
 
     var onOpenUsage: () -> Void = {}
     var onOpenSettings: () -> Void = {}
@@ -585,8 +587,11 @@ final class NotchController {
     private func observeKeepAwake() {
         let awake = KeepAwake.shared
         storeChanges.append(awake.objectWillChange.sink { [weak self] _ in self?.queueRefresh() })
+        // Keep-awake engages when agents start working, which is also when the pill (and the mate) slide out: sip
+        // once they are out.
         storeChanges.append(awake.$held.removeDuplicates().dropFirst().sink { [weak self] held in
-            if held { self?.sip() }
+            guard held else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.sipAfterEngage) { self?.sip() }
         })
     }
 
