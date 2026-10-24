@@ -105,6 +105,8 @@ build/Mate.app/Contents/MacOS/Mate --fake   # cuentas de prueba, sin red ni llav
 
 Inspirada en [Agent Limit](https://agentlimit.app). Los detalles de los proveedores salen del comportamiento de Agent Limit y del proyecto open source [CodexBar](https://github.com/steipete/CodexBar).
 
+Mate emoji: Noto Emoji by Google (Apache 2.0; animation CC BY 4.0)
+
 ## Licencia
 
 [MIT](LICENSE)

@@ -105,6 +105,8 @@ build/Mate.app/Contents/MacOS/Mate --fake   # scripted accounts, no network, no 
 
 Inspired by [Agent Limit](https://agentlimit.app). Provider details learned from Agent Limit's behavior and from the open-source [CodexBar](https://github.com/steipete/CodexBar).
 
+Mate emoji: Noto Emoji by Google (Apache 2.0; animation CC BY 4.0)
+
 ## License
 
 [MIT](LICENSE)
