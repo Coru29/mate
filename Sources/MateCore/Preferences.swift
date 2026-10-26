@@ -20,6 +20,8 @@ public enum PrefKey: String, CaseIterable, Sendable {
     case showMateIcon
     /// Hold a "prevent idle sleep" assertion while agents work.
     case keepAwake
+    /// "Mostrar lo que estás escuchando": the Spotify / Music card and the album art next to the notch.
+    case showNowPlaying
 }
 
 public enum Preferences {
@@ -40,6 +42,7 @@ public enum Preferences {
         PrefKey.alertsDisabledProviders.rawValue: [String](),
         PrefKey.showMateIcon.rawValue: true,
         PrefKey.keepAwake.rawValue: false,
+        PrefKey.showNowPlaying.rawValue: true,
     ]
 
     /// Every provider in the stored order (unknown and repeated names dropped), the missing ones appended in their

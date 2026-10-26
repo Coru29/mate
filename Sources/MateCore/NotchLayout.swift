@@ -38,6 +38,10 @@ public enum NotchLayout {
     public static let mateEarWidth: CGFloat = 32
     /// The mate's sprite cell (the gourd fills about 18 pt of it; the thermos pours in from its top).
     public static let mateIconSize: CGFloat = 24
+    /// The music ear: 7 pt padding, the 18 pt album art, a 6 pt gap, 9 pt of equalizer bars, 8 pt padding.
+    public static let musicEarWidth: CGFloat = 48
+    public static let musicArtSize: CGFloat = 18
+    public static let musicBarsSize = CGSize(width: 9, height: 12)
 
     public static func pickScreen(_ screens: [ScreenInfo], choice: ScreenChoice, mouseScreen: UInt32?) -> ScreenInfo? {
         let main = screens.first(where: \.hasMenuBar) ?? screens.first
@@ -79,6 +83,31 @@ public enum NotchLayout {
         let ear = mateRect(notch: notch)
         return CGRect(x: ear.midX - mateIconSize / 2, y: ear.midY - mateIconSize / 2, width: mateIconSize,
                       height: mateIconSize)
+    }
+
+    /// The music ear (album art and equalizer bars while music plays), in place of the mate's ear.
+    public static func musicRect(notch: CGRect) -> CGRect {
+        CGRect(x: notch.minX - musicEarWidth, y: notch.minY, width: musicEarWidth, height: notch.height)
+    }
+
+    public static func musicArtRect(notch: CGRect) -> CGRect {
+        let ear = musicRect(notch: notch)
+        return CGRect(x: ear.minX + 7, y: ear.midY - musicArtSize / 2, width: musicArtSize, height: musicArtSize)
+    }
+
+    public static func musicBarsRect(notch: CGRect) -> CGRect {
+        let art = musicArtRect(notch: notch)
+        return CGRect(x: art.maxX + 6, y: art.midY - musicBarsSize.height / 2, width: musicBarsSize.width,
+                      height: musicBarsSize.height)
+    }
+
+    /// The left ear for what it shows; nil when it shows nothing.
+    public static func leftEarRect(notch: CGRect, content: LeftEarContent) -> CGRect? {
+        switch content {
+        case .none: nil
+        case .mate: mateRect(notch: notch)
+        case .music: musicRect(notch: notch)
+        }
     }
 
     public static func panelRect(notch: CGRect, contentHeight: CGFloat, screen: ScreenInfo) -> CGRect {
