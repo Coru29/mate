@@ -113,9 +113,12 @@ final class AppleEventPlayerBridge: PlayerBridge, @unchecked Sendable {
         event(player, fourCC(suite), fourCC(id))
     }
 
+    /// Addressed to the running process: on macOS 26 an event addressed by bundle id never reached Spotify (it timed
+    /// out, -1712) while the same event to its pid was answered at once. A pid can't launch anything either.
     private func event(_ player: MusicPlayer, _ cls: FourCharCode, _ id: FourCharCode) -> NSAppleEventDescriptor {
-        NSAppleEventDescriptor.appleEvent(withEventClass: cls, eventID: id,
-                                          targetDescriptor: NSAppleEventDescriptor(bundleIdentifier: player.bundleID),
+        let pid = NSRunningApplication.runningApplications(withBundleIdentifier: player.bundleID).first?.processIdentifier
+        let target = pid.map { NSAppleEventDescriptor(processIdentifier: $0) } ?? NSAppleEventDescriptor.null()
+        return NSAppleEventDescriptor.appleEvent(withEventClass: cls, eventID: id, targetDescriptor: target,
                                           returnID: AEReturnID(kAutoGenerateReturnID),
                                           transactionID: AETransactionID(kAnyTransactionID))
     }
