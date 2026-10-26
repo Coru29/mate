@@ -251,6 +251,7 @@ final class NotchController {
         screenInfo = info
         (notch, fakeNotch) = NotchLayout.notchRect(on: info)
         menuBarVisible = screen.isMenuBarVisible
+        recheckMenuBar()
         endWithoutAnimation()
         updatePill()
         shapeRect = closedRect
@@ -839,11 +840,18 @@ final class NotchController {
 
     private func spaceChanged() {
         updateMenuBarVisibility()
-        // The window list can lag the space switch: look once more a moment later.
+        recheckMenuBar()
+    }
+
+    /// The window list lags a space switch, and a display that was just connected has no menu bar window for a
+    /// second or two: look again 1 s later and 2 s after that, or the notch stays hidden until the next space switch.
+    private func recheckMenuBar(waits: ArraySlice<TimeInterval> = [1, 2]) {
         cancel(&recheckTimer)
-        recheckTimer = oneShot(1) { [weak self] in
+        guard let wait = waits.first else { return }
+        recheckTimer = oneShot(wait) { [weak self] in
             self?.recheckTimer = nil
             self?.updateMenuBarVisibility()
+            self?.recheckMenuBar(waits: waits.dropFirst())
         }
     }
 
