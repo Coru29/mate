@@ -73,40 +73,48 @@ public enum NotchLayout {
         CGRect(x: notch.maxX, y: notch.minY, width: pillWidth + (tagged ? pillTagWidth : 0), height: notch.height)
     }
 
-    /// The mate's ear, the mirror of the pill left of the notch.
-    public static func mateRect(notch: CGRect) -> CGRect {
-        CGRect(x: notch.minX - mateEarWidth, y: notch.minY, width: mateEarWidth, height: notch.height)
+    /// Where an ear `width` wide sits: left of the notch, or right of it (in the pill's place, `onRight`).
+    static func earX(notch: CGRect, width: CGFloat, onRight: Bool) -> CGFloat {
+        onRight ? notch.maxX : notch.minX - width
+    }
+
+    /// The mate's ear, the mirror of the pill left of the notch (or right of it, in the pill's place).
+    public static func mateRect(notch: CGRect, onRight: Bool = false) -> CGRect {
+        CGRect(x: earX(notch: notch, width: mateEarWidth, onRight: onRight), y: notch.minY, width: mateEarWidth,
+               height: notch.height)
     }
 
     /// The sprite cell, centered in the mate's ear.
-    public static func mateIconRect(notch: CGRect) -> CGRect {
-        let ear = mateRect(notch: notch)
+    public static func mateIconRect(notch: CGRect, onRight: Bool = false) -> CGRect {
+        let ear = mateRect(notch: notch, onRight: onRight)
         return CGRect(x: ear.midX - mateIconSize / 2, y: ear.midY - mateIconSize / 2, width: mateIconSize,
                       height: mateIconSize)
     }
 
     /// The music ear (album art and equalizer bars while music plays), in place of the mate's ear.
-    public static func musicRect(notch: CGRect) -> CGRect {
-        CGRect(x: notch.minX - musicEarWidth, y: notch.minY, width: musicEarWidth, height: notch.height)
+    /// The same layout on either side: art then bars, left to right.
+    public static func musicRect(notch: CGRect, onRight: Bool = false) -> CGRect {
+        CGRect(x: earX(notch: notch, width: musicEarWidth, onRight: onRight), y: notch.minY, width: musicEarWidth,
+               height: notch.height)
     }
 
-    public static func musicArtRect(notch: CGRect) -> CGRect {
-        let ear = musicRect(notch: notch)
+    public static func musicArtRect(notch: CGRect, onRight: Bool = false) -> CGRect {
+        let ear = musicRect(notch: notch, onRight: onRight)
         return CGRect(x: ear.minX + 7, y: ear.midY - musicArtSize / 2, width: musicArtSize, height: musicArtSize)
     }
 
-    public static func musicBarsRect(notch: CGRect) -> CGRect {
-        let art = musicArtRect(notch: notch)
+    public static func musicBarsRect(notch: CGRect, onRight: Bool = false) -> CGRect {
+        let art = musicArtRect(notch: notch, onRight: onRight)
         return CGRect(x: art.maxX + 6, y: art.midY - musicBarsSize.height / 2, width: musicBarsSize.width,
                       height: musicBarsSize.height)
     }
 
-    /// The left ear for what it shows; nil when it shows nothing.
-    public static func leftEarRect(notch: CGRect, content: LeftEarContent) -> CGRect? {
+    /// The left ear for what it shows (`onRight`: moved right of the notch); nil when it shows nothing.
+    public static func leftEarRect(notch: CGRect, content: LeftEarContent, onRight: Bool = false) -> CGRect? {
         switch content {
         case .none: nil
-        case .mate: mateRect(notch: notch)
-        case .music: musicRect(notch: notch)
+        case .mate: mateRect(notch: notch, onRight: onRight)
+        case .music: musicRect(notch: notch, onRight: onRight)
         }
     }
 

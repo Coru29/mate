@@ -198,4 +198,15 @@ import Testing
         #expect(NotchLayout.leftEarRect(notch: n, content: .mate) == NotchLayout.mateRect(notch: n))
         #expect(NotchLayout.leftEarRect(notch: n, content: .none) == nil)
     }
+
+    @Test func musicEarRightOfNotch() {
+        let n = CGRect(x: 662, y: 950, width: 188, height: 32)
+        // Same padding and order (art, then bars), starting at the notch's right edge.
+        #expect(NotchLayout.musicRect(notch: n, onRight: true) == CGRect(x: 850, y: 950, width: 48, height: 32))
+        #expect(NotchLayout.musicArtRect(notch: n, onRight: true) == CGRect(x: 857, y: 957, width: 18, height: 18))
+        #expect(NotchLayout.musicBarsRect(notch: n, onRight: true) == CGRect(x: 881, y: 960, width: 9, height: 12))
+        #expect(NotchLayout.leftEarRect(notch: n, content: .music, onRight: true)
+            == NotchLayout.musicRect(notch: n, onRight: true))
+        #expect(NotchLayout.leftEarRect(notch: n, content: .none, onRight: true) == nil)
+    }
 }

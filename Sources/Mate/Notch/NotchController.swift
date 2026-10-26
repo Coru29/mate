@@ -55,6 +55,11 @@ final class NotchController {
     private var leftEar = LeftEarContent.none
     private var mateShown: Bool { leftEar == .mate }
     private var musicShown: Bool { leftEar == .music }
+    /// The left ear's content sits right of the notch, in the pill's place (`MenuBarAvoid`: the app's menus reach
+    /// its left spot while the pill is hidden). Kept while the ear is dropped, so its content fades out where it was.
+    private var earOnRight = false
+    /// The side the mate and music views were last placed on, so a switch fades them in on the new side.
+    private var drawnEarOnRight = false
     /// The mate view is on screen (not faded out); like the pill, it hides while the panel or an alert is open.
     private var mateOnScreen = false
     /// The music ear's view is on screen (its bars bounce only then).
@@ -79,7 +84,8 @@ final class NotchController {
     /// Target of the black shape, in screen coordinates.
     private var shapeRect = CGRect.zero
     private var shapeRadius = closedRadius
-    /// Target of the pill's ear (the black part right of the notch), in screen coordinates; nil when not drawn.
+    /// Target of the black part right of the notch (the pill's ear, or the left ear moved right), in screen
+    /// coordinates; nil when not drawn.
     private var earRect: CGRect?
     /// Target of the mate's ear (left of the notch); nil when not drawn.
     private var leftEarRect: CGRect?
@@ -270,7 +276,7 @@ final class NotchController {
         updatePill()
         shapeRect = closedRect
         shapeRadius = Self.closedRadius
-        earRect = pillShown ? pillEar : nil
+        earRect = rightEarShape
         leftEarRect = leftEarShape
         pillVisible = pillShown
         mateOnScreen = mateShown
@@ -335,12 +341,26 @@ final class NotchController {
         CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
     }
 
-    /// The left ear's content rect for what it shows (the mate's, or the wider music one); nil when nothing.
-    private var leftRect: CGRect? { NotchLayout.leftEarRect(notch: notch, content: leftEar) }
+    /// The left ear's content rect for what it shows (the mate's, or the wider music one), on its side; nil when
+    /// nothing.
+    private var leftRect: CGRect? { NotchLayout.leftEarRect(notch: notch, content: leftEar, onRight: earOnRight) }
 
     /// The left ear's shape, the mirror of `pillEar`: it ends inside the notch, past the notch's rounded corner.
+    /// Nil when it moved right (drawn by `rightEarShape` then).
     private var leftEarShape: CGRect? {
-        leftRect.map { CGRect(x: $0.minX, y: notch.minY, width: $0.width + 2 * Self.closedRadius, height: notch.height) }
+        guard !earOnRight else { return nil }
+        return leftRect.map {
+            CGRect(x: $0.minX, y: notch.minY, width: $0.width + 2 * Self.closedRadius, height: notch.height)
+        }
+    }
+
+    /// The black part right of the notch: the pill's ear, or the left ear's shape moved right (the pill is hidden
+    /// then), built like `pillEar`.
+    private var rightEarShape: CGRect? {
+        if pillShown { return pillEar }
+        guard earOnRight, let r = leftRect else { return nil }
+        return CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: r.width + 2 * Self.closedRadius,
+                      height: notch.height)
     }
 
     /// The left ear retracted into the notch.
@@ -366,8 +386,9 @@ final class NotchController {
             root.frame = CGRect(origin: .zero, size: window.frame.size)
         }
         pill.frame = local(pillRect)
-        mate.frame = local(NotchLayout.mateIconRect(notch: notch))
-        music.frame = local(NotchLayout.musicRect(notch: notch))
+        mate.frame = local(NotchLayout.mateIconRect(notch: notch, onRight: earOnRight))
+        music.frame = local(NotchLayout.musicRect(notch: notch, onRight: earOnRight))
+        drawnEarOnRight = earOnRight
         if pillVisible || final { pill.isHidden = !pillVisible }
         if mateOnScreen || final { mate.isHidden = !mateOnScreen }
         if musicOnScreen || final { music.isHidden = !musicOnScreen }
@@ -399,7 +420,7 @@ final class NotchController {
         let newEar: CGRect?, newLeft: CGRect?
         switch ear {
         case .keep: (newEar, newLeft) = (oldEar, oldLeft)
-        case .show: (newEar, newLeft) = (pillShown ? pillEar : nil, leftEarShape)
+        case .show: (newEar, newLeft) = (rightEarShape, leftEarShape)
         case .hide: (newEar, newLeft) = (nil, nil)
         }
 
@@ -471,7 +492,7 @@ final class NotchController {
             guard let self else { return }
             self.closing = false
             // The pill or the mate may have appeared or gone, or the menu bar changed, while closing.
-            if self.shapeRect != self.closedRect || (self.earRect != nil) != self.pillShown
+            if self.shapeRect != self.closedRect || self.earRect != self.rightEarShape
                 || self.leftEarRect != self.leftEarShape || self.pillVisible != self.pillShown
                 || self.mateOnScreen != self.mateShown || self.musicOnScreen != self.musicShown {
                 self.transitionClosed()
@@ -489,12 +510,19 @@ final class NotchController {
     /// slides out of the notch's side with its content fading in, or fades and retracts into the notch. One ear can
     /// come while the other goes; the spring is the opening one when anything comes.
     /// A shift off the menu bar's menus slides the whole shape, its content along with it, on the opening spring.
+    /// The left ear switching sides tucks into the notch on one side and grows out of the other, its content
+    /// fading in there.
     private func transitionClosed() {
-        let growing = (pillShown && earRect == nil)
+        let growing = (rightEarShape != nil && earRect == nil)
             || (leftEarShape.map { $0.width > (leftEarRect?.width ?? 0) } ?? false)
         let dx = notch.minX - drawnNotchX
         let moving = growing || dx != 0
-        let onScreen = [pill, mate, music].filter { !$0.isHidden }
+        let switched = earOnRight != drawnEarOnRight
+        if switched {
+            mateOnScreen = false
+            musicOnScreen = false
+        }
+        let onScreen = ([pill, mate, music] as [NSView]).filter { !$0.isHidden && !(switched && $0 !== pill) }
         showClosedContent()
         let spring: NotchShapeView.Spring = moving ? .open : .close
         transition(to: closedRect, radius: Self.closedRadius, spring: spring, delay: moving ? 0 : 0.05, ear: .show)
@@ -555,18 +583,20 @@ final class NotchController {
         let placement = closedPlacement(left: left, pill: wanted)
         notch = homeNotch.offsetBy(dx: placement.shift, dy: 0)
         pillShown = wanted
-        leftEar = placement.showsLeftEar ? left : .none
+        leftEar = placement.ear == .hidden ? .none : left
+        if placement.ear != .hidden { earOnRight = placement.ear == .right }
     }
 
     /// With the menu bar showing and its extents known: on a fake notch, off the app's menus (`MenuBarAvoid`); on a
-    /// real notch, the mate's ear only where the menus leave room. Otherwise centered.
+    /// real notch, the mate's ear left where the menus leave room, else right while the pill is hidden. Otherwise
+    /// centered.
     private func closedPlacement(left: LeftEarContent, pill: Bool) -> MenuBarAvoid.Placement {
         guard menuBarVisible, menuBar.active, let extents = menuBar.extents, let info = screenInfo
         else { return .centered }
         guard fakeNotch else {
             return MenuBarAvoid.placeOnRealNotch(notch: homeNotch,
                                                  leftEar: NotchLayout.leftEarRect(notch: homeNotch, content: left)?.width,
-                                                 extents: extents)
+                                                 pill: pill, extents: extents)
         }
         return MenuBarAvoid.place(notch: homeNotch, leftEar: NotchLayout.leftEarRect(notch: homeNotch, content: left)?.width,
                                   rightEar: pill ? NotchLayout.pillRect(notch: homeNotch, tagged: pillTagged).width : nil,
@@ -605,7 +635,7 @@ final class NotchController {
 
     private func refresh() {
         guard screenInfo != nil else { return }
-        let wasShown = pillShown, wasTagged = pillTagged, wasLeft = leftEar, wasNotch = notch
+        let wasShown = pillShown, wasTagged = pillTagged, wasLeft = leftEar, wasRight = earOnRight, wasNotch = notch
         updatePill()
         mate.showsDot = KeepAwake.shared.showsDot
         music.showsDot = KeepAwake.shared.showsDot
@@ -614,7 +644,7 @@ final class NotchController {
         switch mode {
         case .closed:
             let changed = wasShown != pillShown || (pillShown && wasTagged != pillTagged) || wasLeft != leftEar
-                || wasNotch != notch
+                || (leftEar != .none && wasRight != earOnRight) || wasNotch != notch
             if changed && !closing { transitionClosed() }
         case .open:
             resizePanel()
@@ -906,6 +936,8 @@ final class NotchController {
         menuBarVisible = visible
         refreshClosedShape()
     }
+
+    var debugHidePillValue: Bool { debugHidePill }
 
     func debugSetPillHidden(_ hidden: Bool) {
         debugHidePill = hidden

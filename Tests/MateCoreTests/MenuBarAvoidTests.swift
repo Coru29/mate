@@ -29,46 +29,46 @@ import Testing
 
     // Step 2, crowded by the app's menus: slides right, just enough.
     @Test func slidesRightPastTheAppMenus() {
-        #expect(place(app: 2400, status: 3000) == .init(shift: 68, showsLeftEar: true)) // 2408 - 2340
-        #expect(place(app: 2333, status: 3000) == .init(shift: 1, showsLeftEar: true))
+        #expect(place(app: 2400, status: 3000) == .init(shift: 68, ear: .left)) // 2408 - 2340
+        #expect(place(app: 2333, status: 3000) == .init(shift: 1, ear: .left))
     }
 
     // Step 2, crowded by the status items: slides left.
     @Test func slidesLeftOffTheStatusItems() {
-        #expect(place(app: 1800, status: 2600) == .init(shift: -36, showsLeftEar: true)) // 2592 - 2628
+        #expect(place(app: 1800, status: 2600) == .init(shift: -36, ear: .left)) // 2592 - 2628
     }
 
     // Step 2 at an exact fit: the gap is as wide as the shape (288 pt).
     @Test func exactFitShifts() {
         let p = place(app: 2392, status: 2696) // gap 2400...2688
-        #expect(p == .init(shift: 60, showsLeftEar: true))
+        #expect(p == .init(shift: 60, ear: .left))
         // One point narrower: the left ear goes.
-        #expect(place(app: 2393, status: 2696).showsLeftEar == false)
+        #expect(place(app: 2393, status: 2696).ear == .hidden)
     }
 
     // Step 3: without the left ear, body and pill (256 pt) fit, centered or shifted.
     @Test func dropsTheLeftEarWhenTooNarrow() {
         // Gap 2364...2636 (272 pt): too narrow for 288, body + pill (2372...2628) fit where they are.
-        #expect(place(app: 2356, status: 2644) == .init(shift: 0, showsLeftEar: false))
+        #expect(place(app: 2356, status: 2644) == .init(shift: 0, ear: .hidden))
         // Gap 2450...2720 (270 pt): body + pill slide right to start at 2450.
-        #expect(place(app: 2442, status: 2728) == .init(shift: 78, showsLeftEar: false))
+        #expect(place(app: 2442, status: 2728) == .init(shift: 78, ear: .hidden))
         // Gap 2300...2560 (260 pt): crowded from the right, they slide left.
-        #expect(place(app: 2292, status: 2568) == .init(shift: -68, showsLeftEar: false))
+        #expect(place(app: 2292, status: 2568) == .init(shift: -68, ear: .hidden))
         // Exact fit for body + pill: 256 pt.
-        #expect(place(app: 2442, status: 2714) == .init(shift: 78, showsLeftEar: false))
+        #expect(place(app: 2442, status: 2714) == .init(shift: 78, ear: .hidden))
     }
 
     // Past step 3: the body is never dropped; body + pill go where they cover the app's menus least.
     @Test func tooNarrowKeepsBodyClearOfTheAppMenus() {
         // Gap 2508...2600: too narrow; starts right after the app's menus and covers status items.
-        #expect(place(app: 2500, status: 2608) == .init(shift: 136, showsLeftEar: false))
+        #expect(place(app: 2500, status: 2608) == .init(shift: 136, ear: .hidden))
         // Already clear of the app's menus (status items crowd it): stays where it is.
-        #expect(place(app: 2300, status: 2500) == .init(shift: 0, showsLeftEar: false))
+        #expect(place(app: 2300, status: 2500) == .init(shift: 0, ear: .hidden))
     }
 
     @Test func tooNarrowStaysOnScreen() {
         // The app's menus reach almost the right edge: flush with the screen's right edge (3432 - 256).
-        #expect(place(app: 3300, status: 3400) == .init(shift: 3176 - 2372, showsLeftEar: false))
+        #expect(place(app: 3300, status: 3400) == .init(shift: 3176 - 2372, ear: .hidden))
     }
 
     @Test func narrowScreen() {
@@ -76,19 +76,33 @@ import Testing
         let small = CGRect(x: 0, y: 0, width: 1024, height: 768)
         let n = CGRect(x: 412, y: 736, width: 200, height: 32)
         #expect(place(app: 300, status: 800, screen: small, notch: n) == .centered)
-        #expect(place(app: 500, status: 900, screen: small, notch: n) == .init(shift: 128, showsLeftEar: true))
-        #expect(place(app: 700, status: 980, screen: small, notch: n) == .init(shift: 296, showsLeftEar: false))
+        #expect(place(app: 500, status: 900, screen: small, notch: n) == .init(shift: 128, ear: .left))
+        #expect(place(app: 700, status: 980, screen: small, notch: n) == .init(shift: 296, ear: .hidden))
         // Menus to 900 on a 1024 pt screen: as far right as the screen allows (1024 - 256).
-        #expect(place(app: 900, status: 1000, screen: small, notch: n) == .init(shift: 356, showsLeftEar: false))
+        #expect(place(app: 900, status: 1000, screen: small, notch: n) == .init(shift: 356, ear: .hidden))
     }
 
     @Test func withoutEars() {
         // No pill, no ear: the body alone (200 pt) slides.
-        #expect(place(app: 2400, status: 3000, left: nil, right: nil) == .init(shift: 36, showsLeftEar: false))
+        #expect(place(app: 2400, status: 3000, left: nil, right: nil) == .init(shift: 36, ear: .hidden))
         // Mate ear but no pill: 232 pt.
-        #expect(place(app: 2400, status: 3000, right: nil) == .init(shift: 68, showsLeftEar: true))
+        #expect(place(app: 2400, status: 3000, right: nil) == .init(shift: 68, ear: .left))
         // Tagged pill (80 pt) is wider: 312 pt, sliding left.
-        #expect(place(app: 1800, status: 2600, right: 80) == .init(shift: -60, showsLeftEar: true))
+        #expect(place(app: 1800, status: 2600, right: 80) == .init(shift: -60, ear: .left))
+    }
+
+    // Pill hidden: the ear on the right ([body][ear], 232 pt) is tried before dropping it. It is as wide as
+    // [ear][body], and the shape slides, so the ear stays left whenever either fits.
+    @Test func pillHiddenKeepsTheEarLeftBySliding() {
+        // Exact fit for body + ear: gap 2400...2632.
+        #expect(place(app: 2392, status: 2640, right: nil) == .init(shift: 60, ear: .left))
+        // Crowded from the right too.
+        #expect(place(app: 1800, status: 2500, right: nil) == .init(shift: -80, ear: .left)) // 2492 - 2572
+    }
+
+    @Test func pillHiddenDropsTheEarWhenNeitherSideFits() {
+        // Gap 2400...2631 (231 pt): the body alone slides right.
+        #expect(place(app: 2392, status: 2639, right: nil) == .init(shift: 28, ear: .hidden))
     }
 }
 
@@ -126,23 +140,42 @@ import Testing
         // None at all: the screen's right edge.
         #expect(MenuBarAvoid.statusMinX(windows: [], screen: external, screens: screens) == 3432)
     }
+}
 
-    // A real notch (built-in 1512 pt display, notch 665...850): it never moves; the mate's ear (32 pt, 633...665)
-    // shows only while the app's menus end before it.
-    @Test func realNotchKeepsTheEarWhenTheMenusEndBeforeIt() {
-        let real = CGRect(x: 665, y: 950, width: 185, height: 32)
-        let p = MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: 32, extents: .init(appMaxX: 500, statusMinX: 967))
-        #expect(p == MenuBarAvoid.Placement(shift: 0, showsLeftEar: true))
-        // Menus ending exactly where the ear starts still fit.
-        #expect(MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: 32, extents: .init(appMaxX: 633, statusMinX: 967))
-            .showsLeftEar)
+/// A real notch (built-in 1512 pt display, notch 665...850, status items from 967): it never moves; the mate's ear
+/// (32 pt, 633...665) shows left of it while the app's menus end before it, else right of it (850...882) when the
+/// pill is hidden and the status items leave room.
+@Suite struct RealNotchPlacementTests {
+    let real = CGRect(x: 665, y: 950, width: 185, height: 32)
+
+    func place(app: CGFloat, status: CGFloat = 967, left: CGFloat? = 32, pill: Bool = true) -> MenuBarAvoid.Placement {
+        MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: left, pill: pill,
+                                      extents: .init(appMaxX: app, statusMinX: status))
     }
 
-    @Test func realNotchDropsTheEarUnderTheMenus() {
-        let real = CGRect(x: 665, y: 950, width: 185, height: 32)
-        let p = MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: 32, extents: .init(appMaxX: 634, statusMinX: 967))
-        #expect(p == MenuBarAvoid.Placement(shift: 0, showsLeftEar: false))
-        #expect(MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: nil, extents: .init(appMaxX: 900, statusMinX: 967))
-            == .centered)
+    @Test func keepsTheEarLeftWhenTheMenusEndBeforeIt() {
+        #expect(place(app: 500) == .init(shift: 0, ear: .left))
+        #expect(place(app: 500, pill: false) == .init(shift: 0, ear: .left))
+        // Menus ending exactly where the ear starts still fit.
+        #expect(place(app: 633).ear == .left)
+        #expect(place(app: 633, pill: false).ear == .left)
+    }
+
+    @Test func dropsTheEarUnderTheMenusWhenThePillShows() {
+        #expect(place(app: 634) == .init(shift: 0, ear: .hidden))
+        #expect(place(app: 900, left: nil) == .centered)
+    }
+
+    @Test func movesTheEarRightWhenThePillIsHidden() {
+        #expect(place(app: 634, pill: false) == .init(shift: 0, ear: .right))
+        // The wider music ear (48 pt, 850...898) too.
+        #expect(place(app: 700, left: 48, pill: false) == .init(shift: 0, ear: .right))
+    }
+
+    @Test func dropsTheEarWhenTheStatusItemsLeaveNoRoomOnTheRight() {
+        // The ear would end at 882; status items need it to end 8 pt before them.
+        #expect(place(app: 634, status: 890, pill: false).ear == .right)
+        #expect(place(app: 634, status: 889, pill: false) == .init(shift: 0, ear: .hidden))
+        #expect(place(app: 700, status: 905, left: 48, pill: false).ear == .hidden)
     }
 }

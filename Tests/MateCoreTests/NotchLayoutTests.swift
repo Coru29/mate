@@ -81,6 +81,15 @@ import Testing
         #expect(NotchLayout.mateRect(notch: f) == CGRect(x: f.minX - 32, y: f.minY, width: 32, height: 32))
     }
 
+    @Test func mateEarRightOfNotch() {
+        let n = NotchLayout.notchRect(on: macbook()).rect
+        // In the pill's place: same width, starting at the notch's right edge, the sprite centered in it.
+        #expect(NotchLayout.mateRect(notch: n, onRight: true) == CGRect(x: n.maxX, y: 950, width: 32, height: 32))
+        #expect(NotchLayout.mateIconRect(notch: n, onRight: true) == CGRect(x: n.maxX + 4, y: 954, width: 24, height: 24))
+        #expect(NotchLayout.leftEarRect(notch: n, content: .mate, onRight: true)
+            == NotchLayout.mateRect(notch: n, onRight: true))
+    }
+
     @Test func taggedPillIsWider() {
         let n = NotchLayout.notchRect(on: macbook()).rect
         #expect(NotchLayout.pillRect(notch: n, tagged: true) == CGRect(x: 850, y: 950, width: 80, height: 32))

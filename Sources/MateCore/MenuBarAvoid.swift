@@ -19,19 +19,25 @@ public enum MenuBarAvoid {
         }
     }
 
+    /// Where the mate's (or the music's) ear goes: left of the notch as always, right of it in the pill's place
+    /// while the pill is hidden, or not drawn.
+    public enum EarSide: Equatable, Sendable {
+        case left, right, hidden
+    }
+
     public struct Placement: Equatable, Sendable {
         /// Horizontal offset of the whole closed shape from its centered spot.
         public var shift: CGFloat
-        /// The left ear (mate or music) is drawn.
-        public var showsLeftEar: Bool
+        /// Which side of the notch the left ear's content (mate or music) is drawn on.
+        public var ear: EarSide
 
-        public init(shift: CGFloat, showsLeftEar: Bool) {
+        public init(shift: CGFloat, ear: EarSide) {
             self.shift = shift
-            self.showsLeftEar = showsLeftEar
+            self.ear = ear
         }
 
         /// As today: centered, nothing dropped.
-        public static let centered = Placement(shift: 0, showsLeftEar: true)
+        public static let centered = Placement(shift: 0, ear: .left)
     }
 
     /// The free stretch of the menu bar between the app's menus and the status items, margins included, inside the
@@ -44,33 +50,40 @@ public enum MenuBarAvoid {
 
     /// The closed shape's placement. `notch` is the centered fake notch (the body, always drawn), `leftEar` the
     /// left ear's width (nil when it shows nothing) and `rightEar` the pill's width (nil when hidden).
-    /// 1. Centered when that already sits in the gap. 2. Else the smallest shift that fits it. 3. Too wide: without
-    /// the left ear, 1–2 again. Still too wide: body and right ear go where they cover the app's menus least,
+    /// 1. Centered when that already sits in the gap. 2. Else the smallest shift that fits it. 3. Too wide and the
+    /// pill hidden: the ear right of the body, 1–2 again (as wide as the left one, so it only fits when that does
+    /// too; kept so both notch kinds follow the same rule). 4. Without the ear, 1–2 again. Still too wide: body and right ear go where they cover the app's menus least,
     /// moving as little as possible and staying on the screen.
     public static func place(notch: CGRect, leftEar: CGFloat?, rightEar: CGFloat?, extents: Extents,
                              screen: CGRect) -> Placement {
         let right = notch.maxX + (rightEar ?? 0)
         let gap = gap(extents, screen: screen)
         if let leftEar, let gap, let s = fit(minX: notch.minX - leftEar, maxX: right, in: gap) {
-            return Placement(shift: s, showsLeftEar: true)
+            return Placement(shift: s, ear: .left)
+        }
+        if rightEar == nil, let leftEar, let gap, let s = fit(minX: notch.minX, maxX: notch.maxX + leftEar, in: gap) {
+            return Placement(shift: s, ear: .right)
         }
         if let gap, let s = fit(minX: notch.minX, maxX: right, in: gap) {
-            return Placement(shift: s, showsLeftEar: false)
+            return Placement(shift: s, ear: .hidden)
         }
         // Clear of the menus if the screen allows it, else flush with the screen's right edge.
         let width = right - notch.minX
         var x = max(notch.minX, extents.appMaxX + margin)
         x = min(x, screen.maxX - width)
         x = max(x, screen.minX)
-        return Placement(shift: x - notch.minX, showsLeftEar: false)
+        return Placement(shift: x - notch.minX, ear: .hidden)
     }
 
     /// A real notch can't move, and macOS keeps the app's menus left of it but not left of the mate's ear: the ear
-    /// is drawn only when the menus end before it. No margin: a menu item's rect already carries its own padding
-    /// around the title. The pill on the right always stays.
-    public static func placeOnRealNotch(notch: CGRect, leftEar: CGFloat?, extents: Extents) -> Placement {
+    /// is drawn left only when the menus end before it. No margin there: a menu item's rect already carries its own
+    /// padding around the title. Otherwise, while the pill is hidden, the ear goes right of the notch if it ends
+    /// `margin` before the status items; else it is dropped. The pill on the right always stays.
+    public static func placeOnRealNotch(notch: CGRect, leftEar: CGFloat?, pill: Bool, extents: Extents) -> Placement {
         guard let leftEar else { return .centered }
-        return Placement(shift: 0, showsLeftEar: notch.minX - leftEar >= extents.appMaxX)
+        if notch.minX - leftEar >= extents.appMaxX { return .centered }
+        if !pill && notch.maxX + leftEar <= extents.statusMinX - margin { return Placement(shift: 0, ear: .right) }
+        return Placement(shift: 0, ear: .hidden)
     }
 
     /// The smallest shift that puts minX...maxX inside `gap`; nil when it is wider than the gap.

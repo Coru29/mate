@@ -284,13 +284,27 @@ final class MenuBarWatcher: ObservableObject {
             MenuBarAvoid.statusMinX(windows: $0, screen: CGDisplayBounds(info.id), screens: displays())
         }
         var placement = "centered (as today)"
+        // The mate's ear with the pill shown and with it hidden.
+        func side(_ p: MenuBarAvoid.Placement) -> String {
+            switch p.ear {
+            case .left: "left"
+            case .right: "right"
+            case .hidden: "dropped"
+            }
+        }
         if !fake, NotchPrefs.avoidMenuBar, let extents {
-            let p = MenuBarAvoid.placeOnRealNotch(notch: notch, leftEar: NotchLayout.mateEarWidth, extents: extents)
-            placement = "real notch, left-ear \(p.showsLeftEar ? "shown" : "dropped")"
+            let ear = NotchLayout.mateEarWidth
+            let withPill = MenuBarAvoid.placeOnRealNotch(notch: notch, leftEar: ear, pill: true, extents: extents)
+            let alone = MenuBarAvoid.placeOnRealNotch(notch: notch, leftEar: ear, pill: false, extents: extents)
+            placement = "real notch, mate ear \(side(withPill)) with the pill, \(side(alone)) without it"
         } else if fake, NotchPrefs.avoidMenuBar, let extents {
-            let p = MenuBarAvoid.place(notch: notch, leftEar: NotchLayout.mateEarWidth, rightEar: 56, extents: extents,
-                                       screen: info.frame)
-            placement = "shift \(Int(p.shift)) left-ear \(p.showsLeftEar ? "shown" : "dropped") (mate ear + pill)"
+            let ear = NotchLayout.mateEarWidth
+            let withPill = MenuBarAvoid.place(notch: notch, leftEar: ear, rightEar: 56, extents: extents,
+                                              screen: info.frame)
+            let alone = MenuBarAvoid.place(notch: notch, leftEar: ear, rightEar: nil, extents: extents,
+                                           screen: info.frame)
+            placement = "with the pill: shift \(Int(withPill.shift)) mate ear \(side(withPill));"
+                + " without it: shift \(Int(alone.shift)) mate ear \(side(alone))"
         }
         return "menu bar: display=\(info.id) fake-notch=\(fake ? "yes" : "no")  option=\(NotchPrefs.avoidMenuBar ? "on" : "off")"
             + "  permission=\(trusted ? "granted" : "not granted")"
