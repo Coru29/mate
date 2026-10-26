@@ -101,3 +101,11 @@ public enum MateSip {
         mateVisible && sawActivity && !reduceMotion
     }
 }
+
+/// When the mate's ear shows left of the notch: with the pill, and also whenever the Mac is kept awake (by Mate or by
+/// another process such as `caffeinate`), even with the pill hidden. Never over another app's full-screen menu bar.
+public enum MateEar {
+    public static func shown(showMate: Bool, menuBarVisible: Bool, pillShown: Bool, keptAwake: Bool) -> Bool {
+        showMate && menuBarVisible && (pillShown || keptAwake)
+    }
+}

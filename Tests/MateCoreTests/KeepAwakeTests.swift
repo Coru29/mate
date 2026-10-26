@@ -75,3 +75,21 @@ import Testing
         #expect(!MateSip.shouldPlay(mateVisible: true, sawActivity: true, reduceMotion: true))
     }
 }
+
+@Suite struct MateEarTests {
+    @Test func showsWithThePillOrWhileTheMacIsKeptAwake() {
+        // With the pill, as before.
+        #expect(MateEar.shown(showMate: true, menuBarVisible: true, pillShown: true, keptAwake: false))
+        // caffeinate (or Mate's own assertion) running: the mate shows even with the pill hidden.
+        #expect(MateEar.shown(showMate: true, menuBarVisible: true, pillShown: false, keptAwake: true))
+        #expect(MateEar.shown(showMate: true, menuBarVisible: true, pillShown: true, keptAwake: true))
+        // Neither: hidden.
+        #expect(!MateEar.shown(showMate: true, menuBarVisible: true, pillShown: false, keptAwake: false))
+    }
+
+    @Test func thePreferenceAndAHiddenMenuBarWin() {
+        #expect(!MateEar.shown(showMate: false, menuBarVisible: true, pillShown: true, keptAwake: true))
+        // Another app in full screen: nothing over its menu bar area.
+        #expect(!MateEar.shown(showMate: true, menuBarVisible: false, pillShown: false, keptAwake: true))
+    }
+}
