@@ -52,11 +52,12 @@ Mate is inspired by [Agent Limit](https://agentlimit.app), a well-made paid app 
 
 ## Privacy
 
-- **Each token goes only to its own provider's server** (the table above). Redirects to another host are refused. The only other connection is the update check, to `api.github.com` (and GitHub's download servers when you accept an update).
+- **Each token goes only to its own provider's server** (the table above). Redirects to another host are refused. The only other connections are the update check, to `api.github.com` (and GitHub's download servers when you accept an update), and Spotify's album covers (below).
 - **No telemetry, no accounts, no analytics.** Nothing about you leaves the Mac.
 - **Accounts an agent is using are read-only.** Mate never refreshes or rewrites the token of the account Claude Code or Codex is logged in with (refresh tokens rotate: doing so would log the agent out). If that token has expired, Mate waits for the agent to refresh it and meanwhile shows the last data with "N min ago". Cursor, Gemini CLI and Copilot are always read-only.
 - **Accounts Mate owns** (a previous account the agent stopped using, or one added with "Add Account…") keep their tokens only in Mate's own keychain items (`io.github.coru29.Mate.<provider>`), and Mate refreshes them. Deleting such an account deletes Mate's copy and never touches the agent's session.
 - **What the switch writes (coming soon).** "Use in Claude Code" will be the only place where Mate writes to an agent's session: it will replace Claude Code's keychain item `Claude Code-credentials` and the visible identity (`oauthAccount`) in `~/.claude.json` with the chosen account, after saving a copy to undo it, and it asks before the first time. It is not built yet.
+- **Now playing (Spotify and Music).** Mate reads what is playing from those two apps with Apple Events, only while they are open, and never opens them; macOS asks you once to allow it (System Settings → Privacy & Security → Automation). Spotify's album covers are downloaded from `i.scdn.co`, Spotify's image server, with no tokens or cookies; Music's come from the app itself. Turn it off in Settings → General ("Show what you're listening to") and Mate sends no Apple Events at all.
 - Data (accounts without tokens, usage samples, daily token totals) lives in `~/Library/Application Support/Mate/`; preferences in the `io.github.coru29.Mate` defaults domain.
 
 See [SECURITY.md](SECURITY.md).

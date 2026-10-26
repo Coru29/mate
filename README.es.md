@@ -52,11 +52,12 @@ Mate está inspirada en [Agent Limit](https://agentlimit.app), una app paga muy 
 
 ## Privacidad
 
-- **Cada token va solo al servidor de su proveedor** (la tabla de arriba). Las redirecciones a otro host se rechazan. La única otra conexión es el chequeo de actualizaciones, a `api.github.com` (y a los servidores de descarga de GitHub cuando aceptás una actualización).
+- **Cada token va solo al servidor de su proveedor** (la tabla de arriba). Las redirecciones a otro host se rechazan. Las únicas otras conexiones son el chequeo de actualizaciones, a `api.github.com` (y a los servidores de descarga de GitHub cuando aceptás una actualización), y las tapas de los discos de Spotify (abajo).
 - **Sin telemetría, sin cuentas, sin analíticas.** Nada tuyo sale de la Mac.
 - **Las cuentas que está usando un agente son de solo lectura.** Mate nunca refresca ni reescribe el token de la cuenta con la que está logueado Claude Code o Codex (los refresh tokens rotan: hacerlo desloguearía al agente). Si ese token venció, Mate espera a que el agente lo refresque y mientras muestra el último dato con "hace N min". Cursor, Gemini CLI y Copilot son siempre de solo lectura.
 - **Las cuentas que posee Mate** (una cuenta anterior que el agente dejó de usar, o una sumada con "Agregar cuenta…") guardan sus tokens solo en los ítems del llavero de Mate (`io.github.coru29.Mate.<proveedor>`), y Mate los refresca. Borrar una de esas cuentas borra la copia de Mate y nunca toca la sesión del agente.
 - **Qué escribe el cambio de cuenta (próximamente).** "Usar en Claude Code" va a ser el único lugar en el que Mate escribe en la sesión de un agente: va a reemplazar el ítem del llavero `Claude Code-credentials` y la identidad visible (`oauthAccount`) de `~/.claude.json` por la cuenta elegida, después de guardar una copia para deshacerlo, y pregunta antes de la primera vez. Todavía no está hecho.
+- **Lo que estás escuchando (Spotify y Música).** Mate lee lo que suena en esas dos apps con Apple Events, solo mientras están abiertas, y nunca las abre; macOS te pide permiso una vez (Configuración del Sistema → Privacidad y seguridad → Automatización). Las tapas de Spotify se bajan de `i.scdn.co`, el servidor de imágenes de Spotify, sin tokens ni cookies; las de Música salen de la propia app. Si lo apagás en Configuración → General ("Mostrar lo que estás escuchando"), Mate no manda ningún Apple Event.
 - Los datos (cuentas sin tokens, muestras de uso, totales diarios de tokens) están en `~/Library/Application Support/Mate/`; las preferencias, en el dominio `io.github.coru29.Mate`.
 
 Ver [SECURITY.md](SECURITY.md).
