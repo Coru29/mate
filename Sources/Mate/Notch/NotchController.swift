@@ -256,14 +256,14 @@ final class NotchController {
               let screen = screens.first(where: { $0.displayID == info.id }) else {
             endWithoutAnimation()
             screenInfo = nil
-            menuBar.update(screen: nil, fakeNotch: false)
+            menuBar.update(screen: nil)
             window.orderOut(nil)
             return
         }
         screenInfo = info
         (homeNotch, fakeNotch) = NotchLayout.notchRect(on: info)
         notch = homeNotch
-        menuBar.update(screen: info, fakeNotch: fakeNotch)
+        menuBar.update(screen: info)
         menuBarVisible = screen.isMenuBarVisible
         recheckMenuBar()
         endWithoutAnimation()
@@ -558,11 +558,16 @@ final class NotchController {
         leftEar = placement.showsLeftEar ? left : .none
     }
 
-    /// On a fake notch with the menu bar showing and its extents known: off the app's menus (`MenuBarAvoid`);
-    /// otherwise centered, as on a real notch.
+    /// With the menu bar showing and its extents known: on a fake notch, off the app's menus (`MenuBarAvoid`); on a
+    /// real notch, the mate's ear only where the menus leave room. Otherwise centered.
     private func closedPlacement(left: LeftEarContent, pill: Bool) -> MenuBarAvoid.Placement {
-        guard fakeNotch, menuBarVisible, menuBar.active, let extents = menuBar.extents, let info = screenInfo
+        guard menuBarVisible, menuBar.active, let extents = menuBar.extents, let info = screenInfo
         else { return .centered }
+        guard fakeNotch else {
+            return MenuBarAvoid.placeOnRealNotch(notch: homeNotch,
+                                                 leftEar: NotchLayout.leftEarRect(notch: homeNotch, content: left)?.width,
+                                                 extents: extents)
+        }
         return MenuBarAvoid.place(notch: homeNotch, leftEar: NotchLayout.leftEarRect(notch: homeNotch, content: left)?.width,
                                   rightEar: pill ? NotchLayout.pillRect(notch: homeNotch, tagged: pillTagged).width : nil,
                                   extents: extents, screen: info.frame)
@@ -922,7 +927,7 @@ final class NotchController {
             layout()
         }
         // "Esquivar los menús": starts or stops the watcher; its extents change refreshes the shape.
-        menuBar.update(screen: screenInfo, fakeNotch: fakeNotch)
+        menuBar.update(screen: screenInfo)
         let always = NotchPrefs.showPillAlways
         let withMate = NotchPrefs.showMateIcon
         if always != showAlways || withMate != showMate {

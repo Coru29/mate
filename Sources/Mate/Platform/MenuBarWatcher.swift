@@ -2,8 +2,8 @@ import AppKit
 import ApplicationServices
 import MateCore
 
-/// Where the menu bar's menus end on the notch's screen, for `MenuBarAvoid` (only on a display without a real
-/// notch, with "Esquivar los menús en monitores sin notch" on). The app's menus come from Accessibility (the frontmost
+/// Where the menu bar's menus end on the notch's screen, for `MenuBarAvoid` (with "Esquivar los menús de la barra"
+/// on; on a real notch it decides only whether the mate's ear fits). The app's menus come from Accessibility (the frontmost
 /// app's menu bar items; nothing else is read or controlled), the status items from the window list (no permission).
 /// Event-driven: app activation, space and screen changes, and the frontmost app's window changes (an `AXObserver`)
 /// each schedule one coalesced read; nothing runs while inactive.
@@ -42,8 +42,8 @@ final class MenuBarWatcher: ObservableObject {
 
     /// The notch's screen and whether avoiding applies there; the controller calls it on every layout and option
     /// change. Starts or stops the observers and schedules a read.
-    func update(screen: ScreenInfo?, fakeNotch: Bool) {
-        let on = fakeNotch && NotchPrefs.avoidMenuBar && screen != nil
+    func update(screen: ScreenInfo?) {
+        let on = NotchPrefs.avoidMenuBar && screen != nil
         let screenChanged = screen?.id != screenID
         screenID = screen?.id
         if on != active {
@@ -284,7 +284,10 @@ final class MenuBarWatcher: ObservableObject {
             MenuBarAvoid.statusMinX(windows: $0, screen: CGDisplayBounds(info.id), screens: displays())
         }
         var placement = "centered (as today)"
-        if fake, NotchPrefs.avoidMenuBar, let extents {
+        if !fake, NotchPrefs.avoidMenuBar, let extents {
+            let p = MenuBarAvoid.placeOnRealNotch(notch: notch, leftEar: NotchLayout.mateEarWidth, extents: extents)
+            placement = "real notch, left-ear \(p.showsLeftEar ? "shown" : "dropped")"
+        } else if fake, NotchPrefs.avoidMenuBar, let extents {
             let p = MenuBarAvoid.place(notch: notch, leftEar: NotchLayout.mateEarWidth, rightEar: 56, extents: extents,
                                        screen: info.frame)
             placement = "shift \(Int(p.shift)) left-ear \(p.showsLeftEar ? "shown" : "dropped") (mate ear + pill)"

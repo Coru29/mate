@@ -22,7 +22,7 @@ public enum PrefKey: String, CaseIterable, Sendable {
     case keepAwake
     /// "Mostrar lo que estás escuchando": the Spotify / Music card and the album art next to the notch.
     case showNowPlaying
-    /// "Esquivar los menús en monitores sin notch": the closed shape slides off the app's menus on a fake notch.
+    /// "Esquivar los menús de la barra": the closed shape slides off the app's menus on a fake notch, and the mate's ear steps aside on a real one.
     case avoidMenuBar
 }
 

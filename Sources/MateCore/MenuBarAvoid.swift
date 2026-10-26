@@ -65,6 +65,14 @@ public enum MenuBarAvoid {
         return Placement(shift: x - notch.minX, showsLeftEar: false)
     }
 
+    /// A real notch can't move, and macOS keeps the app's menus left of it but not left of the mate's ear: the ear
+    /// is drawn only when the menus end before it. No margin: a menu item's rect already carries its own padding
+    /// around the title. The pill on the right always stays.
+    public static func placeOnRealNotch(notch: CGRect, leftEar: CGFloat?, extents: Extents) -> Placement {
+        guard let leftEar else { return .centered }
+        return Placement(shift: 0, showsLeftEar: notch.minX - leftEar >= extents.appMaxX)
+    }
+
     /// The smallest shift that puts minX...maxX inside `gap`; nil when it is wider than the gap.
     private static func fit(minX: CGFloat, maxX: CGFloat, in gap: ClosedRange<CGFloat>) -> CGFloat? {
         guard maxX - minX <= gap.upperBound - gap.lowerBound else { return nil }

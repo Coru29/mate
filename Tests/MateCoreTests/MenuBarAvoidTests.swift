@@ -126,4 +126,23 @@ import Testing
         // None at all: the screen's right edge.
         #expect(MenuBarAvoid.statusMinX(windows: [], screen: external, screens: screens) == 3432)
     }
+
+    // A real notch (built-in 1512 pt display, notch 665...850): it never moves; the mate's ear (32 pt, 633...665)
+    // shows only while the app's menus end before it.
+    @Test func realNotchKeepsTheEarWhenTheMenusEndBeforeIt() {
+        let real = CGRect(x: 665, y: 950, width: 185, height: 32)
+        let p = MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: 32, extents: .init(appMaxX: 500, statusMinX: 967))
+        #expect(p == MenuBarAvoid.Placement(shift: 0, showsLeftEar: true))
+        // Menus ending exactly where the ear starts still fit.
+        #expect(MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: 32, extents: .init(appMaxX: 633, statusMinX: 967))
+            .showsLeftEar)
+    }
+
+    @Test func realNotchDropsTheEarUnderTheMenus() {
+        let real = CGRect(x: 665, y: 950, width: 185, height: 32)
+        let p = MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: 32, extents: .init(appMaxX: 634, statusMinX: 967))
+        #expect(p == MenuBarAvoid.Placement(shift: 0, showsLeftEar: false))
+        #expect(MenuBarAvoid.placeOnRealNotch(notch: real, leftEar: nil, extents: .init(appMaxX: 900, statusMinX: 967))
+            == .centered)
+    }
 }

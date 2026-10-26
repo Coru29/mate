@@ -277,6 +277,6 @@
 "Permití a Mate controlar %@ en Ajustes del Sistema → Privacidad → Automatización" = "Allow Mate to control %@ in System Settings → Privacy → Automation";
 "Abrir Ajustes" = "Open Settings";
 "Música" = "Music";
-"Esquivar los menús en monitores sin notch" = "Avoid the menus on displays without a notch";
+"Esquivar los menús de la barra" = "Avoid the menu bar's menus";
 "Para no tapar los menús, Mate necesita permiso de Accesibilidad" = "To stay off the menus, Mate needs Accessibility permission";
 "Permitir" = "Allow";
