@@ -42,23 +42,19 @@ protocol PlayerBridge: AnyObject {
 /// needs the player's dictionary and nothing launches a player. Events go only to a player that is running.
 final class AppleEventPlayerBridge: PlayerBridge, @unchecked Sendable {
     private static let timeout: TimeInterval = 3
+    /// The first event of a run may wait for the user to answer macOS's prompt.
+    private static let promptTimeout: TimeInterval = 120
+    private var answered: Set<MusicPlayer> = []
 
     func isRunning(_ player: MusicPlayer) -> Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: player.bundleID).isEmpty
     }
 
+    /// Permission comes from the first event itself: macOS shows its prompt while that event waits.
+    /// `AEDeterminePermissionToAutomateTarget` is not used: on macOS 26 it never returned and never prompted, and
+    /// the serial queue behind it stalled every later read and control.
     func access(_ player: MusicPlayer) -> PlayerAccess {
-        guard isRunning(player) else { return .notRunning }
-        let target = NSAppleEventDescriptor(bundleIdentifier: player.bundleID)
-        guard let desc = target.aeDesc else { return .failed(-1) }
-        // A concrete event (get data): with askUserIfNeeded, wildcards are not allowed.
-        let status = AEDeterminePermissionToAutomateTarget(desc, AEEventClass(kAECoreSuite), AEEventID(kAEGetData), true)
-        switch Int(status) {
-        case Int(noErr): return .granted
-        case Int(errAEEventNotPermitted): return .denied
-        case Int(procNotFound): return .notRunning
-        default: return .failed(Int(status))
-        }
+        isRunning(player) ? .granted : .notRunning
     }
 
     func read(_ player: MusicPlayer) throws -> PlayerRead {
@@ -166,10 +162,13 @@ final class AppleEventPlayerBridge: PlayerBridge, @unchecked Sendable {
         guard isRunning(player) else { throw PlayerError.notRunning }
         let reply: NSAppleEventDescriptor
         do {
-            reply = try e.sendEvent(options: [.waitForReply, .neverInteract], timeout: Self.timeout)
+            // Not `.neverInteract`: with it, an event that needs consent fails (-1744) instead of prompting.
+            reply = try e.sendEvent(options: [.waitForReply],
+                                    timeout: answered.contains(player) ? Self.timeout : Self.promptTimeout)
         } catch let error as NSError {
             throw Self.map(error.code)
         }
+        answered.insert(player)
         if let n = reply.paramDescriptor(forKeyword: AEKeyword(keyErrorNumber))?.int32Value, n != 0 {
             throw Self.map(Int(n))
         }
@@ -178,7 +177,7 @@ final class AppleEventPlayerBridge: PlayerBridge, @unchecked Sendable {
 
     private static func map(_ code: Int) -> PlayerError {
         switch code {
-        case Int(errAEEventNotPermitted): .notPermitted
+        case Int(errAEEventNotPermitted), Int(errAEEventWouldRequireUserConsent): .notPermitted
         case Int(procNotFound), Int(connectionInvalid): .notRunning
         default: .failed(code)
         }
