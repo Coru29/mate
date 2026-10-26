@@ -37,16 +37,27 @@ enum DebugCLI {
     /// `--fake-menubar <appMaxX>,<statusMinX>`: the menu bar's extents in points from the notch screen's left edge,
     /// instead of reading them; the screen is treated as one without a notch (Mate draws its own), so `--snapshot`,
     /// `--snapshot-anim` and `--snapshot-menubar` render the placements on any Mac. `--fake-menubar live` keeps the
-    /// screen notch-less but reads the real menu bar.
+    /// screen notch-less but reads the real menu bar. Add `--real-notch` to keep (or draw) a real notch instead.
     static var fakeMenuBar: (app: CGFloat, status: CGFloat)? {
         let parts = value(after: "--fake-menubar")?.split(separator: ",").compactMap { Double($0) } ?? []
         return parts.count == 2 ? (CGFloat(parts[0]), CGFloat(parts[1])) : nil
     }
 
-    /// The screen as the notch sees it: without its notch under `--fake-menubar`.
+    /// The screen as the notch sees it: without its notch under `--fake-menubar`; with `--real-notch` too, with a
+    /// real notch instead (the screen's own, or a 185 x 32 pt one at the top center), for the real-notch placements.
     static func notchScreen(_ info: ScreenInfo) -> ScreenInfo {
-        guard CommandLine.arguments.contains("--fake-menubar") else { return info }
+        let args = CommandLine.arguments
+        guard args.contains("--fake-menubar") else { return info }
         var out = info
+        if args.contains("--real-notch") {
+            guard info.leftAux == nil || info.rightAux == nil || info.safeTop <= 0 else { return info }
+            let f = info.frame, size = CGSize(width: 185, height: 32)
+            let side = (f.width - size.width) / 2
+            out.safeTop = size.height
+            out.leftAux = CGRect(x: f.minX, y: f.maxY - size.height, width: side, height: size.height)
+            out.rightAux = CGRect(x: f.maxX - side, y: f.maxY - size.height, width: side, height: size.height)
+            return out
+        }
         out.leftAux = nil
         out.rightAux = nil
         out.safeTop = 0

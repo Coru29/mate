@@ -104,19 +104,27 @@ extension NotchController {
     }
 
     /// `--snapshot-menubar <dir>` (with `--fake-menubar`): steps through menu bars that leave the closed shape
-    /// centered, slid right, slid left, without its left ear and with no room at all, then centered again, and renders
+    /// centered, slid right, slid left, without its left ear and with no room at all, then centered again, then the
+    /// same with the pill hidden (the ear switching sides on a real notch, and dropped when crowded), and renders
     /// the screen's whole top strip a few times after each change (mb-<step>-<ms>.png): the app's menus are the light
     /// bar on the left, the status items the one on the right.
     private func scheduleMenuBarSnapshots(to dir: String) {
         window.alphaValue = 0
         window.ignoresMouseEvents = true
-        let steps: [(String, CGFloat, CGFloat)] = [("1-centered", 300, 1100), ("2-right", 700, 1100),
-                                                   ("2-left", 300, 850), ("3-no-ear", 640, 920),
-                                                   ("4-no-room", 800, 900), ("5-back", 300, 1100)]
+        // The third value hides the pill: the left ear (the mate while kept awake, or the music) may move right of
+        // the notch (a real notch, `--real-notch`) when the menus reach its left spot.
+        let steps: [(String, CGFloat, CGFloat, Bool)] = [
+            ("1-centered", 300, 1100, false), ("2-right", 700, 1100, false), ("2-left", 300, 850, false),
+            ("3-no-ear", 640, 920, false), ("4-no-room", 800, 900, false), ("5-back", 300, 1100, false),
+            ("6-solo", 300, 1100, true), ("7-solo-menus", 640, 1100, true), ("8-solo-back", 300, 1100, true),
+            ("9-solo-menus", 640, 1100, true), ("10-pill", 640, 1100, false), ("11-solo-crowded", 640, 880, true),
+            ("12-back", 300, 1100, false),
+        ]
         for (n, step) in steps.enumerated() {
             let at = 2.0 + Double(n) * 1.5
             DispatchQueue.main.asyncAfter(deadline: .now() + at) { [weak self] in
                 guard let self else { return }
+                if self.debugHidePillValue != step.3 { self.debugSetPillHidden(step.3) }
                 MenuBarWatcher.shared.debugSet(app: step.1, status: step.2)
                 for t in [0.05, 0.12, 0.25, 1.0] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
