@@ -91,3 +91,39 @@ import Testing
         #expect(place(app: 1800, status: 2600, right: 80) == .init(shift: -60, showsLeftEar: true))
     }
 }
+
+/// The built-in display at 0...1512 and an external one at 1512...3432, both with their tops at window-server y 0.
+@Suite struct MenuBarReadTests {
+    let builtIn = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    let external = CGRect(x: 1512, y: 0, width: 1920, height: 1080)
+    var screens: [CGRect] { [builtIn, external] }
+
+    @Test func appMenusOnTheScreenTakeTheirMaxX() {
+        let items = [CGRect(x: 1520, y: 0, width: 30, height: 24), CGRect(x: 1550, y: 0, width: 60, height: 24),
+                     CGRect(x: 1610, y: 0, width: 50, height: 24)]
+        #expect(MenuBarAvoid.appMaxX(items: items, screen: external, screens: screens) == 1660)
+        #expect(MenuBarAvoid.appMaxX(items: [], screen: external, screens: screens) == nil)
+    }
+
+    @Test func appMenusOnAnotherScreenMapByLeftEdge() {
+        // Shown on the built-in's menu bar up to x 400: on the external one they end 400 pt from its left edge.
+        let items = [CGRect(x: 10, y: 0, width: 40, height: 33), CGRect(x: 50, y: 0, width: 350, height: 33)]
+        #expect(MenuBarAvoid.appMaxX(items: items, screen: external, screens: screens) == 1912)
+    }
+
+    @Test func itemsBelowTheMenuBarAreIgnored() {
+        let items = [CGRect(x: 1520, y: 0, width: 30, height: 24), CGRect(x: 2000, y: 300, width: 80, height: 24),
+                     CGRect(x: 2100, y: 0, width: 0, height: 24)]
+        #expect(MenuBarAvoid.appMaxX(items: items, screen: external, screens: screens) == 1550)
+    }
+
+    @Test func statusItemsTakeTheirMinX() {
+        let windows = [CGRect(x: 3300, y: 0, width: 40, height: 24), CGRect(x: 3200, y: 0, width: 100, height: 24),
+                       CGRect(x: 970, y: 0, width: 38, height: 33)]
+        #expect(MenuBarAvoid.statusMinX(windows: windows, screen: external, screens: screens) == 3200)
+        // Only on the built-in (970, 542 pt from its right edge): mapped onto the external's right edge.
+        #expect(MenuBarAvoid.statusMinX(windows: [windows[2]], screen: external, screens: screens) == 2890)
+        // None at all: the screen's right edge.
+        #expect(MenuBarAvoid.statusMinX(windows: [], screen: external, screens: screens) == 3432)
+    }
+}

@@ -34,6 +34,25 @@ enum DebugCLI {
         return args[i + offset]
     }
 
+    /// `--fake-menubar <appMaxX>,<statusMinX>`: the menu bar's extents in points from the notch screen's left edge,
+    /// instead of reading them; the screen is treated as one without a notch (Mate draws its own), so `--snapshot`,
+    /// `--snapshot-anim` and `--snapshot-menubar` render the placements on any Mac. `--fake-menubar live` keeps the
+    /// screen notch-less but reads the real menu bar.
+    static var fakeMenuBar: (app: CGFloat, status: CGFloat)? {
+        let parts = value(after: "--fake-menubar")?.split(separator: ",").compactMap { Double($0) } ?? []
+        return parts.count == 2 ? (CGFloat(parts[0]), CGFloat(parts[1])) : nil
+    }
+
+    /// The screen as the notch sees it: without its notch under `--fake-menubar`.
+    static func notchScreen(_ info: ScreenInfo) -> ScreenInfo {
+        guard CommandLine.arguments.contains("--fake-menubar") else { return info }
+        var out = info
+        out.leftAux = nil
+        out.rightAux = nil
+        out.safeTop = 0
+        return out
+    }
+
     /// `--add-account <provider>`.
     static var addAccountProvider: ProviderID? {
         guard CommandLine.arguments.contains("--add-account") else { return nil }
@@ -207,6 +226,7 @@ enum DebugCLI {
         print(render(accounts: store.accounts, snapshots: store.snapshots))
         print(KeepAwake.dumpLine())
         print(NowPlayingCenter.dumpLine())
+        print(MenuBarWatcher.dumpLine())
         exit(0)
     }
 

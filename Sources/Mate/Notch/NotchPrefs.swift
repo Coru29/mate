@@ -15,4 +15,5 @@ enum NotchPrefs {
     static var showMateIcon: Bool { value(.showMateIcon) ?? true }
     static var keepAwake: Bool { value(.keepAwake) ?? false }
     static var showNowPlaying: Bool { value(.showNowPlaying) ?? true }
+    static var avoidMenuBar: Bool { value(.avoidMenuBar) ?? true }
 }

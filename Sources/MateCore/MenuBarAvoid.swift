@@ -72,4 +72,40 @@ public enum MenuBarAvoid {
         if maxX > gap.upperBound { return gap.upperBound - maxX }
         return 0
     }
+
+    // MARK: Reading the menu bar
+
+    /// How far below a screen's top edge a menu-bar item may start.
+    static let barDepth: CGFloat = 60
+
+    /// Whether `item` sits in `screen`'s menu bar. Both in window-server coordinates (origin top-left of the main
+    /// display, y down), where a screen's menu bar is at its minY.
+    static func inMenuBar(_ item: CGRect, of screen: CGRect) -> Bool {
+        item.width > 0 && item.minY >= screen.minY - 1 && item.minY < screen.minY + barDepth
+            && item.midX >= screen.minX && item.midX < screen.maxX
+    }
+
+    /// Right end of the app's menus on `screen`, from the menu bar items' rects (Accessibility, window-server
+    /// coordinates; x is the same as Cocoa's). Menus shown on another display's menu bar are mapped onto this one by
+    /// their distance from that display's left edge (an inactive menu bar shows the same menus). Nil without items.
+    public static func appMaxX(items: [CGRect], screen: CGRect, screens: [CGRect]) -> CGFloat? {
+        let here = items.filter { inMenuBar($0, of: screen) }
+        if let x = here.map(\.maxX).max() { return x }
+        let offsets = items.compactMap { item in
+            screens.first { inMenuBar(item, of: $0) }.map { item.maxX - $0.minX }
+        }
+        return offsets.max().map { screen.minX + $0 }
+    }
+
+    /// Left end of the status items on `screen`, from the status-layer windows' rects (window-server coordinates).
+    /// Items shown only on another display are mapped by their distance from its right edge; none at all: the
+    /// screen's right edge.
+    public static func statusMinX(windows: [CGRect], screen: CGRect, screens: [CGRect]) -> CGFloat {
+        let here = windows.filter { inMenuBar($0, of: screen) }
+        if let x = here.map(\.minX).min() { return x }
+        let offsets = windows.compactMap { w in
+            screens.first { inMenuBar(w, of: $0) }.map { $0.maxX - w.minX }
+        }
+        return offsets.max().map { screen.maxX - $0 } ?? screen.maxX
+    }
 }
