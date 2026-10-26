@@ -33,6 +33,8 @@ final class NotchController {
     let root = NotchShapeView()
     private let pill = PillView()
     private let mate = MateIconView()
+    private let music = MusicEarView()
+    private let nowPlaying = NowPlayingCenter.shared
     private let banner = AlertBanner()
 
     private var screenInfo: ScreenInfo?
@@ -42,10 +44,15 @@ final class NotchController {
     private var pillShown = false
     /// The pill view is on screen (not faded out); it hides while the panel or an alert is open.
     private var pillVisible = false
-    /// The mate's ear is wanted closed (`MateEar`: with the pill, or while the Mac is kept awake).
-    private var mateShown = false
+    /// What the left ear shows closed (`NowPlayingUI.leftEar`): the album art while music plays, else the mate
+    /// (`MateEar`: with the pill, or while the Mac is kept awake), else nothing.
+    private var leftEar = LeftEarContent.none
+    private var mateShown: Bool { leftEar == .mate }
+    private var musicShown: Bool { leftEar == .music }
     /// The mate view is on screen (not faded out); like the pill, it hides while the panel or an alert is open.
     private var mateOnScreen = false
+    /// The music ear's view is on screen (its bars bounce only then).
+    private var musicOnScreen = false
     /// "Mostrar el mate junto al notch": the mate's ear shows left of the notch whenever the pill shows.
     private var showMate = NotchPrefs.showMateIcon
     /// The next sip of the mate (one-shot, armed only while agents work and the mate's ear shows).
@@ -114,6 +121,7 @@ final class NotchController {
         window.contentView = root
         root.content.addSubview(pill)
         root.content.addSubview(mate)
+        root.content.addSubview(music)
         root.onHover = { [weak self] inside in self?.hoverChanged(inside) }
         root.onClick = { [weak self] event in self?.clicked(event) }
         root.onRightClick = { [weak self] event in self?.showMenu(event) }
@@ -125,6 +133,7 @@ final class NotchController {
         observe(center, UserDefaults.didChangeNotification) { $0.preferencesChanged() }
         observeStore()
         observeKeepAwake()
+        observeNowPlaying()
 
         layout()
         window.orderFrontRegardless()
@@ -168,8 +177,10 @@ final class NotchController {
         // Before the page is built, so its keep-awake row is measured with the panel's first height.
         KeepAwake.shared.checkExternal()
         // The controller lives as long as the app.
-        let container = PanelPager(store: store, accountID: store.panelAccount?.id) { [unowned self] id, hasDots in
-            self.makePanel(accountID: id, hasDots: hasDots)
+        nowPlaying.panelOpen = true
+        let container = PanelPager(store: store, accountID: store.panelAccount?.id, topInset: notch.height) {
+            [unowned self] id, hasDots, cardSpace in
+            self.makePanel(accountID: id, hasDots: hasDots, cardSpace: cardSpace)
         }
         panelRect = NotchLayout.panelRect(notch: notch, contentHeight: container.fittingHeight, screen: info)
         panelView = container
@@ -199,6 +210,7 @@ final class NotchController {
         removeMonitors()
         mode = .closed
         showHint = false
+        nowPlaying.panelOpen = false
         store.panelDidClose()
         Log.info("panel closed")
         if let container = panelView {
@@ -244,9 +256,11 @@ final class NotchController {
         shapeRect = closedRect
         shapeRadius = Self.closedRadius
         earRect = pillShown ? pillEar : nil
-        leftEarRect = mateShown ? mateEar : nil
+        leftEarRect = leftEarShape
         pillVisible = pillShown
         mateOnScreen = mateShown
+        musicOnScreen = musicShown
+        music.setPlaying(musicOnScreen)
         setWindowFrame(stripRect)
         if !window.isVisible { window.orderFrontRegardless() }
         showNextAlert()
@@ -259,6 +273,7 @@ final class NotchController {
             cancel(&closeTimer)
             panelView?.removeFromSuperview()
             panelView = nil
+            nowPlaying.panelOpen = false
             store.panelDidClose()
         }
         if mode == .alert { removeAlertView() }
@@ -269,6 +284,7 @@ final class NotchController {
         // A hide that was in flight must not leave the pill (or the mate) held invisible.
         NotchMotion.restore(pill)
         NotchMotion.restore(mate)
+        NotchMotion.restore(music)
     }
 
     private var pillRect: CGRect { NotchLayout.pillRect(notch: notch, tagged: pillTagged) }
@@ -277,8 +293,8 @@ final class NotchController {
     /// A fake notch with the menu bar hidden (another app in full screen) keeps only a 2 pt edge at the very top,
     /// so it takes no clicks from that app.
     private var stripRect: CGRect {
-        if pillShown || mateShown {
-            return notch.union(pillShown ? pillRect : .null).union(mateShown ? mateRect : .null)
+        if pillShown || leftEar != .none {
+            return notch.union(pillShown ? pillRect : .null).union(leftRect ?? .null)
         }
         if fakeNotch && !menuBarVisible { return CGRect(x: notch.minX, y: notch.maxY - 2, width: notch.width, height: 2) }
         return notch
@@ -303,14 +319,15 @@ final class NotchController {
         CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
     }
 
-    private var mateRect: CGRect { NotchLayout.mateRect(notch: notch) }
+    /// The left ear's content rect for what it shows (the mate's, or the wider music one); nil when nothing.
+    private var leftRect: CGRect? { NotchLayout.leftEarRect(notch: notch, content: leftEar) }
 
-    /// The mate's ear, the mirror of `pillEar`: it ends inside the notch, past the notch's rounded corner.
-    private var mateEar: CGRect {
-        CGRect(x: mateRect.minX, y: notch.minY, width: mateRect.width + 2 * Self.closedRadius, height: notch.height)
+    /// The left ear's shape, the mirror of `pillEar`: it ends inside the notch, past the notch's rounded corner.
+    private var leftEarShape: CGRect? {
+        leftRect.map { CGRect(x: $0.minX, y: notch.minY, width: $0.width + 2 * Self.closedRadius, height: notch.height) }
     }
 
-    /// The mate's ear retracted into the notch.
+    /// The left ear retracted into the notch.
     private var tuckedLeftEar: CGRect {
         CGRect(x: notch.minX, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
     }
@@ -334,8 +351,10 @@ final class NotchController {
         }
         pill.frame = local(pillRect)
         mate.frame = local(NotchLayout.mateIconRect(notch: notch))
+        music.frame = local(NotchLayout.musicRect(notch: notch))
         if pillVisible || final { pill.isHidden = !pillVisible }
         if mateOnScreen || final { mate.isHidden = !mateOnScreen }
+        if musicOnScreen || final { music.isHidden = !musicOnScreen }
         panelView?.frame = local(panelRect)
         alertView?.frame = local(CGRect(x: alertRect.minX, y: alertRect.minY, width: alertRect.width,
                                         height: AlertBanner.lineHeight))
@@ -364,7 +383,7 @@ final class NotchController {
         let newEar: CGRect?, newLeft: CGRect?
         switch ear {
         case .keep: (newEar, newLeft) = (oldEar, oldLeft)
-        case .show: (newEar, newLeft) = (pillShown ? pillEar : nil, mateShown ? mateEar : nil)
+        case .show: (newEar, newLeft) = (pillShown ? pillEar : nil, leftEarShape)
         case .hide: (newEar, newLeft) = (nil, nil)
         }
 
@@ -434,8 +453,8 @@ final class NotchController {
             self.closing = false
             // The pill or the mate may have appeared or gone, or the menu bar changed, while closing.
             if self.shapeRect != self.closedRect || (self.earRect != nil) != self.pillShown
-                || (self.leftEarRect != nil) != self.mateShown || self.pillVisible != self.pillShown
-                || self.mateOnScreen != self.mateShown {
+                || self.leftEarRect != self.leftEarShape || self.pillVisible != self.pillShown
+                || self.mateOnScreen != self.mateShown || self.musicOnScreen != self.musicShown {
                 self.transitionClosed()
             }
             // Hand the keyboard back to the app the user was in (the panel became key only through a click).
@@ -451,7 +470,8 @@ final class NotchController {
     /// slides out of the notch's side with its content fading in, or fades and retracts into the notch. One ear can
     /// come while the other goes; the spring is the opening one when anything comes.
     private func transitionClosed() {
-        let growing = (pillShown && earRect == nil) || (mateShown && leftEarRect == nil)
+        let growing = (pillShown && earRect == nil)
+            || (leftEarShape.map { $0.width > (leftEarRect?.width ?? 0) } ?? false)
         showClosedContent()
         transition(to: closedRect, radius: Self.closedRadius, spring: growing ? .open : .close,
                    delay: growing ? 0 : 0.05, ear: .show)
@@ -462,12 +482,14 @@ final class NotchController {
     private func showClosedContent(revealDelay: CFTimeInterval = 0.1) {
         pillVisible = setOnScreen(pill, pillShown, was: pillVisible, revealDelay: revealDelay)
         mateOnScreen = setOnScreen(mate, mateShown, was: mateOnScreen, revealDelay: revealDelay)
+        musicOnScreen = setOnScreen(music, musicShown, was: musicOnScreen, revealDelay: revealDelay)
     }
 
     /// Fades the pill and the mate out and holds them invisible until `showClosedContent`.
     private func hideClosedContent() {
         pillVisible = setOnScreen(pill, false, was: pillVisible, revealDelay: 0)
         mateOnScreen = setOnScreen(mate, false, was: mateOnScreen, revealDelay: 0)
+        musicOnScreen = setOnScreen(music, false, was: musicOnScreen, revealDelay: 0)
     }
 
     private func setOnScreen(_ view: NSView, _ on: Bool, was: Bool, revealDelay: CFTimeInterval) -> Bool {
@@ -475,9 +497,11 @@ final class NotchController {
             view.isHidden = false
             NotchMotion.restore(view)
             if !was { NotchMotion.reveal(view, delay: revealDelay, duration: 0.14) }
+            if view === music { music.setPlaying(true) }
         } else if was {
             if NotchMotion.reduceMotion { view.isHidden = true } else { NotchMotion.fadeOut(view, duration: 0.08) }
             if view === mate { mate.stop() }
+            if view === music { music.setPlaying(false) }
         }
         return on
     }
@@ -500,8 +524,9 @@ final class NotchController {
             pillTagged = tagged
         }
         pillShown = wanted
-        mateShown = MateEar.shown(showMate: showMate, menuBarVisible: menuBarVisible, pillShown: wanted,
-                                  keptAwake: KeepAwake.shared.showsDot)
+        leftEar = NowPlayingUI.leftEar(showMusic: nowPlaying.enabled, playing: nowPlaying.current?.state == .playing,
+                                       showMate: showMate, menuBarVisible: menuBarVisible, pillShown: wanted,
+                                       keptAwake: KeepAwake.shared.showsDot)
     }
 
     /// Only the store changes that can change what the notch shows (`NotchRefresh`): closed, an agent streaming
@@ -536,13 +561,15 @@ final class NotchController {
 
     private func refresh() {
         guard screenInfo != nil else { return }
-        let wasShown = pillShown, wasTagged = pillTagged, wasMate = mateShown
+        let wasShown = pillShown, wasTagged = pillTagged, wasLeft = leftEar
         updatePill()
         mate.showsDot = KeepAwake.shared.showsDot
+        music.showsDot = KeepAwake.shared.showsDot
+        music.setArtwork(nowPlaying.artwork)
         updateSip()
         switch mode {
         case .closed:
-            let changed = wasShown != pillShown || (pillShown && wasTagged != pillTagged) || wasMate != mateShown
+            let changed = wasShown != pillShown || (pillShown && wasTagged != pillTagged) || wasLeft != leftEar
             if changed && !closing { transitionClosed() }
         case .open:
             resizePanel()
@@ -584,8 +611,9 @@ final class NotchController {
         store.selectAccount(step: step)
     }
 
-    private func makePanel(accountID: String?, hasDots: Bool) -> PanelView {
-        PanelView(store: store, accountID: accountID, hasDots: hasDots, topInset: notch.height, hint: showHint) {
+    private func makePanel(accountID: String?, hasDots: Bool, cardSpace: CGFloat) -> PanelView {
+        PanelView(store: store, accountID: accountID, hasDots: hasDots, topInset: notch.height + cardSpace,
+                  hint: showHint) {
             [weak self] in self?.onOpenUsage()
         }
     }
@@ -602,6 +630,14 @@ final class NotchController {
             guard held else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.sipAfterEngage) { self?.sip() }
         })
+    }
+
+    // MARK: Now playing
+
+    /// The art ear and the panel's card follow the player (track, play/pause, artwork, permission). The card's
+    /// clock ticks on its own object, so it never reaches here.
+    private func observeNowPlaying() {
+        storeChanges.append(nowPlaying.objectWillChange.sink { [weak self] _ in self?.queueRefresh() })
     }
 
     /// The mate is on screen, at rest or sipping.

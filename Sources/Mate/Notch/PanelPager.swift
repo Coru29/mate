@@ -1,7 +1,9 @@
 import AppKit
 import SwiftUI
+import MateCore
 
-/// The open panel's content: the current account's page and, with more than one account, the dots below it.
+/// The open panel's content: the now-playing card on top (it stays put while the pages slide), the current
+/// account's page and, with more than one account, the dots below it.
 /// Switching accounts slides the pages like paging on iOS: the current one moves out (fading, scaled to 0.98) while
 /// the next comes in from the other side, on the page spring. Pages are pinned to the top; when the panel's height
 /// changes the dots follow the bottom on the same spring as the black shape. Unflipped and layer-backed, so
@@ -9,23 +11,44 @@ import SwiftUI
 @MainActor
 final class PanelPager: NSView {
     private let store: UsageStore
-    private let makePage: (_ accountID: String?, _ hasDots: Bool) -> PanelView
+    /// `cardSpace`: room the page leaves at its top for the card.
+    private let makePage: (_ accountID: String?, _ hasDots: Bool, _ cardSpace: CGFloat) -> PanelView
+    /// Height of the notch strip above the content.
+    private let topInset: CGFloat
     private(set) var accountID: String?
     private var page: PanelHostingView
     /// Pages sliding out; removed when their slide ends, or at once when another slide starts.
     private var outgoing: [NSView] = []
     private var dots: DotsHostingView?
+    private var card: CardHostingView?
+    /// Space between the card and the page below it (the page's own row spacing).
+    private static let cardGap: CGFloat = 14
 
-    init(store: UsageStore, accountID: String?, makePage: @escaping (String?, Bool) -> PanelView) {
+    init(store: UsageStore, accountID: String?, topInset: CGFloat,
+         makePage: @escaping (String?, Bool, CGFloat) -> PanelView) {
         self.store = store
         self.makePage = makePage
+        self.topInset = topInset
         self.accountID = accountID
         let hasDots = store.notchAccounts.count > 1
-        page = PanelHostingView(rootView: makePage(accountID, hasDots))
+        page = PanelHostingView(rootView: makePage(accountID, false, 0))
         super.init(frame: .zero)
         wantsLayer = true
+        setCard(Self.cardWanted)
+        page.rootView = makePage(accountID, hasDots, cardSpace)
         addPage(page)
         setDots(hasDots)
+    }
+
+    private static var cardWanted: Bool {
+        let center = NowPlayingCenter.shared
+        return NowPlayingUI.showsCard(enabled: center.enabled, nowPlaying: center.current)
+    }
+
+    /// What the page leaves free at its top for the card.
+    private var cardSpace: CGFloat {
+        guard let card else { return 0 }
+        return card.fittingSize.height + Self.cardGap
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -41,8 +64,10 @@ final class PanelPager: NSView {
     func refresh() {
         let hasDots = store.notchAccounts.count > 1
         setDots(hasDots)
-        page.rootView = makePage(accountID, hasDots)
+        setCard(Self.cardWanted)
+        page.rootView = makePage(accountID, hasDots, cardSpace)
         place(page)
+        if let card { place(card) }
     }
 
     /// Slides to `id`: forward (the next account) moves the pages to the left.
@@ -53,7 +78,7 @@ final class PanelPager: NSView {
         setDots(hasDots)
         let old = page
         accountID = id
-        page = PanelHostingView(rootView: makePage(id, hasDots))
+        page = PanelHostingView(rootView: makePage(id, hasDots, cardSpace))
         addPage(page)
         outgoing.append(old)
 
@@ -108,14 +133,32 @@ final class PanelPager: NSView {
     private func addPage(_ view: PanelHostingView) {
         view.wantsLayer = true
         view.autoresizingMask = [.width, .minYMargin]
-        if let dots { addSubview(view, positioned: .below, relativeTo: dots) } else { addSubview(view) }
+        // Below everything: the card and the dots stay on top of the sliding pages.
+        addSubview(view, positioned: .below, relativeTo: nil)
         place(view)
     }
 
-    /// A page keeps its own height, pinned to the top (unflipped: the top is maxY).
+    /// A page keeps its own height, pinned to the top (unflipped: the top is maxY); the card sits below the notch
+    /// strip, where the page's top padding starts.
     private func place(_ view: NSView) {
         let h = view.fittingSize.height
-        view.frame = CGRect(x: 0, y: bounds.height - h, width: bounds.width, height: h)
+        let top: CGFloat = view === card ? topInset + 10 : 0
+        view.frame = CGRect(x: 0, y: bounds.height - top - h, width: bounds.width, height: h)
+    }
+
+    private func setCard(_ shown: Bool) {
+        if shown, card == nil {
+            let center = NowPlayingCenter.shared
+            let view = CardHostingView(rootView: NowPlayingCard(center: center, clock: center.clock))
+            view.wantsLayer = true
+            view.autoresizingMask = [.width, .minYMargin]
+            addSubview(view)
+            card = view
+            place(view)
+        } else if !shown, let view = card {
+            view.removeFromSuperview()
+            card = nil
+        }
     }
 
     private func setDots(_ shown: Bool) {

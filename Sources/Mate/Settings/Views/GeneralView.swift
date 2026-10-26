@@ -32,6 +32,7 @@ struct GeneralView: View {
                     Text("Siempre").tag(true)
                 }
                 Toggle("Mostrar el mate junto al notch", isOn: backend.binding(.showMateIcon, default: true))
+                Toggle("Mostrar lo que estás escuchando", isOn: backend.binding(.showNowPlaying, default: true))
             } footer: {
                 Text("Sin notch, Mate dibuja uno propio arriba al centro. Pasar el mouse por el notch abre el panel aunque el pill no se vea.")
             }

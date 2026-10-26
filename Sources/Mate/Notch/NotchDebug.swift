@@ -6,7 +6,10 @@ import AppKit
 /// (pill-*.png: the pill must end visible). At 7 s the mate takes a sip (sip-*.png, through the whole animation).
 /// At 10 s the pill is hidden for good, leaving the mate's ear alone if the Mac is kept awake (solo-*.png); the panel
 /// opens from that state at 11.5 s and closes at 12.5 s (solo-open-*.png, solo-close-*.png), and the pill comes back
-/// at 14 s (back-*.png).
+/// at 14 s (back-*.png). With `--fake-now-playing <fixture>`: at 16 s the music pauses (np-pause-*.png: the art ear
+/// gives way to the mate), the panel opens at 17.5 s with the card (np-open-*.png), shuffle flips at 19 s
+/// (np-shuffle-*.png), the music plays again at 20.5 s (np-play-*.png) and the panel closes at 22 s back to the art
+/// ear (np-close-*.png).
 /// `--trace-anim <dir>`: the same open and close without PNGs; a display link (only while each animation runs)
 /// writes one line per frame to open-trace.txt / close-trace.txt: time since start, gap since the previous frame,
 /// the window frame and the body's on-screen bounds. In-process, no screen recording.
@@ -79,6 +82,14 @@ extension NotchController {
         frames(11.5, "solo-open", [0.05, 0.15, 0.8]) { $0.openPanel() }
         frames(12.5, "solo-close", [0.05, 0.12, 0.5]) { $0.closePanel() }
         frames(14, "back", morph) { $0.debugSetPillHidden(false) }
+        if args.contains("--fake-now-playing") {
+            let player = NowPlayingCenter.shared
+            frames(16, "np-pause", morph) { _ in player.perform(.playPause) }
+            frames(17.5, "np-open", [0.05, 0.15, 0.8]) { $0.openPanel() }
+            frames(19, "np-shuffle", [0.5]) { _ in player.perform(.shuffle(!(player.current?.shuffle ?? false))) }
+            frames(20.5, "np-play", [0.5]) { _ in player.perform(.playPause) }
+            frames(22, "np-close", [0.05, 0.12, 0.5]) { $0.closePanel() }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
             self?.debugSip()
             for t in [0.0, 0.4, 0.9, 1.3, 1.6, 1.9, 2.2, 2.5, 3.0] {

@@ -268,3 +268,13 @@
 "caffeinate activo" = "caffeinate activo";
 "%@ mantiene la Mac despierta" = "%@ mantiene la Mac despierta";
 "La Mac va a quedar despierta mientras trabajen los agentes" = "La Mac va a quedar despierta mientras trabajen los agentes";
+
+/* Now playing (Spotify and Music) */
+"Mostrar lo que estás escuchando" = "Mostrar lo que estás escuchando";
+"Anterior" = "Anterior";
+"Reproducir" = "Reproducir";
+"Siguiente" = "Siguiente";
+"Aleatorio" = "Aleatorio";
+"Permití a Mate controlar %@ en Ajustes del Sistema → Privacidad → Automatización" = "Permití a Mate controlar %@ en Ajustes del Sistema → Privacidad → Automatización";
+"Abrir Ajustes" = "Abrir Ajustes";
+"Música" = "Música";

@@ -267,3 +267,13 @@
 "caffeinate activo" = "caffeinate running";
 "%@ mantiene la Mac despierta" = "%@ is keeping the Mac awake";
 "La Mac va a quedar despierta mientras trabajen los agentes" = "The Mac will stay awake while agents work";
+
+/* Now playing (Spotify and Music) */
+"Mostrar lo que estás escuchando" = "Show what you're listening to";
+"Anterior" = "Previous";
+"Reproducir" = "Play";
+"Siguiente" = "Next";
+"Aleatorio" = "Shuffle";
+"Permití a Mate controlar %@ en Ajustes del Sistema → Privacidad → Automatización" = "Allow Mate to control %@ in System Settings → Privacy → Automation";
+"Abrir Ajustes" = "Open Settings";
+"Música" = "Music";
