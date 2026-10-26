@@ -55,4 +55,19 @@ enum NotchMotion {
     static func restore(_ view: NSView) {
         view.layer?.removeAnimation(forKey: "fadeOut")
     }
+
+    /// The closed shape slid by `dx` (off the menu bar's menus): the view is already at its new place and starts
+    /// `dx` back, on the shape's spring. Additive, so a slide that interrupts another adds to it smoothly.
+    @MainActor
+    static func slide(_ view: NSView, by dx: CGFloat, spring: NotchShapeView.Spring) {
+        guard let layer = view.layer, !reduceMotion else { return }
+        let a = spring.animation(keyPath: "position.x")
+        a.isAdditive = true
+        a.fromValue = -dx
+        a.toValue = 0
+        slides += 1
+        layer.add(a, forKey: "slide-\(slides)")
+    }
+
+    @MainActor private static var slides = 0
 }

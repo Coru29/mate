@@ -38,7 +38,13 @@ final class NotchController {
     private let banner = AlertBanner()
 
     private var screenInfo: ScreenInfo?
+    /// The notch where it is (real) or where Mate draws it (fake, centered); the open panel and alerts hang from it.
+    private var homeNotch = CGRect.zero
+    /// The closed shape's notch: `homeNotch`, slid off the app's menus on a fake notch (`MenuBarAvoid`).
     private var notch = CGRect.zero
+    /// Where the closed content views were last placed (x of `notch`), so a shift slides them along.
+    private var drawnNotchX: CGFloat = 0
+    private let menuBar = MenuBarWatcher.shared
     private var fakeNotch = false
     private var menuBarVisible = true
     private var pillShown = false
@@ -134,6 +140,9 @@ final class NotchController {
         observeStore()
         observeKeepAwake()
         observeNowPlaying()
+        menuBar.onChange = { [weak self] in self?.queueRefresh() }
+        // The permission row comes and goes with the trust flag while the panel is open.
+        storeChanges.append(menuBar.objectWillChange.sink { [weak self] _ in self?.queueRefresh() })
 
         layout()
         window.orderFrontRegardless()
@@ -174,15 +183,16 @@ final class NotchController {
         cancel(&closeTimer)
         if mode == .alert { removeAlertView() }
         closing = false
-        // Before the page is built, so its keep-awake row is measured with the panel's first height.
+        // Before the page is built, so its keep-awake and permission rows are measured with the panel's first height.
         KeepAwake.shared.checkExternal()
+        menuBar.recheckTrust()
         // The controller lives as long as the app.
         nowPlaying.panelOpen = true
         let container = PanelPager(store: store, accountID: store.panelAccount?.id, topInset: notch.height) {
             [unowned self] id, hasDots, cardSpace in
             self.makePanel(accountID: id, hasDots: hasDots, cardSpace: cardSpace)
         }
-        panelRect = NotchLayout.panelRect(notch: notch, contentHeight: container.fittingHeight, screen: info)
+        panelRect = NotchLayout.panelRect(notch: homeNotch, contentHeight: container.fittingHeight, screen: info)
         panelView = container
         root.content.addSubview(container, positioned: .below, relativeTo: pill)
         mode = .open
@@ -241,15 +251,19 @@ final class NotchController {
         let screens = NSScreen.screens
         let mouse = NSEvent.mouseLocation
         let mouseID = screens.first { NSMouseInRect(mouse, $0.frame, false) }?.displayID
-        guard let info = NotchLayout.pickScreen(screens.map(\.info), choice: screenChoice, mouseScreen: mouseID),
+        guard let info = NotchLayout.pickScreen(screens.map { DebugCLI.notchScreen($0.info) }, choice: screenChoice,
+                                                mouseScreen: mouseID),
               let screen = screens.first(where: { $0.displayID == info.id }) else {
             endWithoutAnimation()
             screenInfo = nil
+            menuBar.update(screen: nil, fakeNotch: false)
             window.orderOut(nil)
             return
         }
         screenInfo = info
-        (notch, fakeNotch) = NotchLayout.notchRect(on: info)
+        (homeNotch, fakeNotch) = NotchLayout.notchRect(on: info)
+        notch = homeNotch
+        menuBar.update(screen: info, fakeNotch: fakeNotch)
         menuBarVisible = screen.isMenuBarVisible
         recheckMenuBar()
         endWithoutAnimation()
@@ -262,6 +276,7 @@ final class NotchController {
         mateOnScreen = mateShown
         musicOnScreen = musicShown
         music.setPlaying(musicOnScreen)
+        drawnNotchX = notch.minX
         setWindowFrame(stripRect)
         if !window.isVisible { window.orderFrontRegardless() }
         showNextAlert()
@@ -400,17 +415,20 @@ final class NotchController {
         shapeRadius = radius
         earRect = newEar
         leftEarRect = newLeft
+        // An ear that comes out while the shape slides starts tucked where the notch was, not where it goes.
+        let moved = drawnNotchX - notch.minX
+        drawnNotchX = notch.minX
 
         // An interrupted animation continues from where it is, moved into the new window's coordinates.
         var shift = CGAffineTransform(translationX: oldOrigin.x - window.frame.minX, y: oldOrigin.y - window.frame.minY)
         let from = bodyInFlight?.copy(using: &shift) ?? NotchShapeView.path(local(fromRect), radius: fromRadius)
         let to = NotchShapeView.path(local(toRect), radius: radius)
         let earFrom = earInFlight?.copy(using: &shift)
-            ?? NotchShapeView.path(local(oldEar ?? tuckedEar), radius: Self.closedRadius)
+            ?? NotchShapeView.path(local(oldEar ?? tuckedEar.offsetBy(dx: moved, dy: 0)), radius: Self.closedRadius)
         let earTo = NotchShapeView.path(local(newEar ?? tuckedEar), radius: Self.closedRadius)
         let moveEar = oldEar != nil || newEar != nil
         let leftFrom = leftInFlight?.copy(using: &shift)
-            ?? NotchShapeView.path(local(oldLeft ?? tuckedLeftEar), radius: Self.closedRadius)
+            ?? NotchShapeView.path(local(oldLeft ?? tuckedLeftEar.offsetBy(dx: moved, dy: 0)), radius: Self.closedRadius)
         let leftTo = NotchShapeView.path(local(newLeft ?? tuckedLeftEar), radius: Self.closedRadius)
         let moveLeft = oldLeft != nil || newLeft != nil
 
@@ -470,12 +488,19 @@ final class NotchController {
     /// The closed shape changed (pill or mate shown or hidden, menu bar shown or hidden, panel just closed): each ear
     /// slides out of the notch's side with its content fading in, or fades and retracts into the notch. One ear can
     /// come while the other goes; the spring is the opening one when anything comes.
+    /// A shift off the menu bar's menus slides the whole shape, its content along with it, on the opening spring.
     private func transitionClosed() {
         let growing = (pillShown && earRect == nil)
             || (leftEarShape.map { $0.width > (leftEarRect?.width ?? 0) } ?? false)
+        let dx = notch.minX - drawnNotchX
+        let moving = growing || dx != 0
+        let onScreen = [pill, mate, music].filter { !$0.isHidden }
         showClosedContent()
-        transition(to: closedRect, radius: Self.closedRadius, spring: growing ? .open : .close,
-                   delay: growing ? 0 : 0.05, ear: .show)
+        let spring: NotchShapeView.Spring = moving ? .open : .close
+        transition(to: closedRect, radius: Self.closedRadius, spring: spring, delay: moving ? 0 : 0.05, ear: .show)
+        if dx != 0 && !NotchMotion.reduceMotion {
+            for view in onScreen { NotchMotion.slide(view, by: dx, spring: spring) }
+        }
     }
 
     /// Shows the pill and the mate that are wanted closed and hides the others: a view that comes cancels any held
@@ -524,10 +549,23 @@ final class NotchController {
                         tag: tagged ? NotchText.weekTag : nil)
             pillTagged = tagged
         }
+        let left = NowPlayingUI.leftEar(showMusic: nowPlaying.enabled, playing: nowPlaying.current?.state == .playing,
+                                        showMate: showMate, menuBarVisible: menuBarVisible, pillShown: wanted,
+                                        keptAwake: KeepAwake.shared.showsDot)
+        let placement = closedPlacement(left: left, pill: wanted)
+        notch = homeNotch.offsetBy(dx: placement.shift, dy: 0)
         pillShown = wanted
-        leftEar = NowPlayingUI.leftEar(showMusic: nowPlaying.enabled, playing: nowPlaying.current?.state == .playing,
-                                       showMate: showMate, menuBarVisible: menuBarVisible, pillShown: wanted,
-                                       keptAwake: KeepAwake.shared.showsDot)
+        leftEar = placement.showsLeftEar ? left : .none
+    }
+
+    /// On a fake notch with the menu bar showing and its extents known: off the app's menus (`MenuBarAvoid`);
+    /// otherwise centered, as on a real notch.
+    private func closedPlacement(left: LeftEarContent, pill: Bool) -> MenuBarAvoid.Placement {
+        guard fakeNotch, menuBarVisible, menuBar.active, let extents = menuBar.extents, let info = screenInfo
+        else { return .centered }
+        return MenuBarAvoid.place(notch: homeNotch, leftEar: NotchLayout.leftEarRect(notch: homeNotch, content: left)?.width,
+                                  rightEar: pill ? NotchLayout.pillRect(notch: homeNotch, tagged: pillTagged).width : nil,
+                                  extents: extents, screen: info.frame)
     }
 
     /// Only the store changes that can change what the notch shows (`NotchRefresh`): closed, an agent streaming
@@ -562,7 +600,7 @@ final class NotchController {
 
     private func refresh() {
         guard screenInfo != nil else { return }
-        let wasShown = pillShown, wasTagged = pillTagged, wasLeft = leftEar
+        let wasShown = pillShown, wasTagged = pillTagged, wasLeft = leftEar, wasNotch = notch
         updatePill()
         mate.showsDot = KeepAwake.shared.showsDot
         music.showsDot = KeepAwake.shared.showsDot
@@ -571,6 +609,7 @@ final class NotchController {
         switch mode {
         case .closed:
             let changed = wasShown != pillShown || (pillShown && wasTagged != pillTagged) || wasLeft != leftEar
+                || wasNotch != notch
             if changed && !closing { transitionClosed() }
         case .open:
             resizePanel()
@@ -591,7 +630,7 @@ final class NotchController {
             pager.refresh()
         }
         pendingStep = nil
-        let target = NotchLayout.panelRect(notch: notch, contentHeight: pager.fittingHeight, screen: info)
+        let target = NotchLayout.panelRect(notch: homeNotch, contentHeight: pager.fittingHeight, screen: info)
         guard abs(target.height - panelRect.height) > 0.5 else { return }
         panelRect = target
         transition(to: target, radius: Self.openRadius, spring: .page)
@@ -686,7 +725,7 @@ final class NotchController {
         let view = banner.makeView(item)
         alertAction = item.action
         let width = min(max(view.fittingSize.width, 260), min(520, info.frame.width - 20))
-        var x = notch.midX - width / 2
+        var x = homeNotch.midX - width / 2
         x = min(max(x, info.frame.minX), info.frame.maxX - width)
         alertRect = CGRect(x: x, y: info.frame.maxY - notch.height - AlertBanner.lineHeight, width: width,
                            height: notch.height + AlertBanner.lineHeight)
@@ -882,6 +921,8 @@ final class NotchController {
             screenChoice = choice
             layout()
         }
+        // "Esquivar los menús": starts or stops the watcher; its extents change refreshes the shape.
+        menuBar.update(screen: screenInfo, fakeNotch: fakeNotch)
         let always = NotchPrefs.showPillAlways
         let withMate = NotchPrefs.showMateIcon
         if always != showAlways || withMate != showMate {

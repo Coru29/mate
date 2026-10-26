@@ -16,6 +16,10 @@ import AppKit
 extension NotchController {
     func scheduleAnimationSnapshots() {
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot-menubar"), i + 1 < args.count {
+            scheduleMenuBarSnapshots(to: args[i + 1])
+            return
+        }
         // These checks render the layer tree in-process, so the window itself stays invisible and lets every click
         // through: nothing shows on the user's screen while they run.
         if args.contains("--snapshot-anim") || args.contains("--trace-anim") {
@@ -97,6 +101,55 @@ extension NotchController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/\(name)") }
             }
         }
+    }
+
+    /// `--snapshot-menubar <dir>` (with `--fake-menubar`): steps through menu bars that leave the closed shape
+    /// centered, slid right, slid left, without its left ear and with no room at all, then centered again, and renders
+    /// the screen's whole top strip a few times after each change (mb-<step>-<ms>.png): the app's menus are the light
+    /// bar on the left, the status items the one on the right.
+    private func scheduleMenuBarSnapshots(to dir: String) {
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        let steps: [(String, CGFloat, CGFloat)] = [("1-centered", 300, 1100), ("2-right", 700, 1100),
+                                                   ("2-left", 300, 850), ("3-no-ear", 640, 920),
+                                                   ("4-no-room", 800, 900), ("5-back", 300, 1100)]
+        for (n, step) in steps.enumerated() {
+            let at = 2.0 + Double(n) * 1.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + at) { [weak self] in
+                guard let self else { return }
+                MenuBarWatcher.shared.debugSet(app: step.1, status: step.2)
+                for t in [0.05, 0.12, 0.25, 1.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+                        self?.renderMenuBar(app: step.1, status: step.2,
+                                            to: "\(dir)/mb-\(step.0)-\(Int(t * 1000))ms.png")
+                    }
+                }
+            }
+        }
+    }
+
+    private func renderMenuBar(app: CGFloat, status: CGFloat, to path: String) {
+        guard let screen = window.screen ?? NSScreen.main,
+              let layer = root.layer?.presentation() ?? root.layer else { return }
+        let scale: CGFloat = 2
+        let strip = CGSize(width: screen.frame.width, height: 60)
+        guard let ctx = CGContext(data: nil, width: Int(strip.width * scale), height: Int(strip.height * scale),
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.setFillColor(CGColor(gray: 0.55, alpha: 1))
+        ctx.fill(CGRect(origin: .zero, size: strip))
+        let bar = CGRect(x: 0, y: strip.height - 24, width: 0, height: 24)
+        ctx.setFillColor(CGColor(gray: 0.8, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: bar.minY, width: app, height: bar.height))
+        ctx.setFillColor(CGColor(gray: 0.7, alpha: 1))
+        ctx.fill(CGRect(x: status, y: bar.minY, width: strip.width - status, height: bar.height))
+        // The window, at its place on the screen (its top is the screen's top).
+        ctx.translateBy(x: window.frame.minX - screen.frame.minX, y: strip.height - window.frame.height)
+        layer.render(in: ctx)
+        guard let image = ctx.makeImage(),
+              let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return }
+        try? data.write(to: URL(fileURLWithPath: path))
     }
 
     /// Renders the window's presentation layer tree over a mid-gray backdrop, with a 1 px red line at the top of
