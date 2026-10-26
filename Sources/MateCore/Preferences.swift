@@ -22,6 +22,8 @@ public enum PrefKey: String, CaseIterable, Sendable {
     case keepAwake
     /// "Mostrar lo que estás escuchando": the Spotify / Music card and the album art next to the notch.
     case showNowPlaying
+    /// "Esquivar los menús en monitores sin notch": the closed shape slides off the app's menus on a fake notch.
+    case avoidMenuBar
 }
 
 public enum Preferences {
@@ -43,6 +45,7 @@ public enum Preferences {
         PrefKey.showMateIcon.rawValue: true,
         PrefKey.keepAwake.rawValue: false,
         PrefKey.showNowPlaying.rawValue: true,
+        PrefKey.avoidMenuBar.rawValue: true,
     ]
 
     /// Every provider in the stored order (unknown and repeated names dropped), the missing ones appended in their
