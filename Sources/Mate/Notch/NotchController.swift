@@ -40,8 +40,12 @@ final class NotchController {
     private var fakeNotch = false
     private var menuBarVisible = true
     private var pillShown = false
-    /// The pill view is on screen (not faded out); it hides while the panel or an alert is open. The mate follows it.
+    /// The pill view is on screen (not faded out); it hides while the panel or an alert is open.
     private var pillVisible = false
+    /// The mate's ear is wanted closed (`MateEar`: with the pill, or while the Mac is kept awake).
+    private var mateShown = false
+    /// The mate view is on screen (not faded out); like the pill, it hides while the panel or an alert is open.
+    private var mateOnScreen = false
     /// "Mostrar el mate junto al notch": the mate's ear shows left of the notch whenever the pill shows.
     private var showMate = NotchPrefs.showMateIcon
     /// The next sip of the mate (one-shot, armed only while agents work and the mate's ear shows).
@@ -172,7 +176,7 @@ final class NotchController {
         root.content.addSubview(container, positioned: .below, relativeTo: pill)
         mode = .open
         // The panel grows symmetrically out of the notch; the pill retracts into it (the panel shows the numbers).
-        hidePill()
+        hideClosedContent()
         transition(to: panelRect, radius: Self.openRadius, ear: .hide)
         // The content comes in once the shape is about 60 % open.
         NotchMotion.reveal(container, delay: Self.contentDelay)
@@ -242,6 +246,7 @@ final class NotchController {
         earRect = pillShown ? pillEar : nil
         leftEarRect = mateShown ? mateEar : nil
         pillVisible = pillShown
+        mateOnScreen = mateShown
         setWindowFrame(stripRect)
         if !window.isVisible { window.orderFrontRegardless() }
         showNextAlert()
@@ -272,7 +277,9 @@ final class NotchController {
     /// A fake notch with the menu bar hidden (another app in full screen) keeps only a 2 pt edge at the very top,
     /// so it takes no clicks from that app.
     private var stripRect: CGRect {
-        if pillShown { return notch.union(pillRect).union(showMate ? mateRect : .null) }
+        if pillShown || mateShown {
+            return notch.union(pillShown ? pillRect : .null).union(mateShown ? mateRect : .null)
+        }
         if fakeNotch && !menuBarVisible { return CGRect(x: notch.minX, y: notch.maxY - 2, width: notch.width, height: 2) }
         return notch
     }
@@ -295,9 +302,6 @@ final class NotchController {
     private var tuckedEar: CGRect {
         CGRect(x: notch.maxX - 2 * Self.closedRadius, y: notch.minY, width: 2 * Self.closedRadius, height: notch.height)
     }
-
-    /// The mate's ear shows with the pill, when the preference is on.
-    private var mateShown: Bool { pillShown && showMate }
 
     private var mateRect: CGRect { NotchLayout.mateRect(notch: notch) }
 
@@ -330,10 +334,8 @@ final class NotchController {
         }
         pill.frame = local(pillRect)
         mate.frame = local(NotchLayout.mateIconRect(notch: notch))
-        if pillVisible || final {
-            pill.isHidden = !pillVisible
-            mate.isHidden = !(pillVisible && showMate)
-        }
+        if pillVisible || final { pill.isHidden = !pillVisible }
+        if mateOnScreen || final { mate.isHidden = !mateOnScreen }
         panelView?.frame = local(panelRect)
         alertView?.frame = local(CGRect(x: alertRect.minX, y: alertRect.minY, width: alertRect.width,
                                         height: AlertBanner.lineHeight))
@@ -362,7 +364,7 @@ final class NotchController {
         let newEar: CGRect?, newLeft: CGRect?
         switch ear {
         case .keep: (newEar, newLeft) = (oldEar, oldLeft)
-        case .show: (newEar, newLeft) = (pillEar, showMate ? mateEar : nil)
+        case .show: (newEar, newLeft) = (pillShown ? pillEar : nil, mateShown ? mateEar : nil)
         case .hide: (newEar, newLeft) = (nil, nil)
         }
 
@@ -422,18 +424,18 @@ final class NotchController {
     }
 
     /// Closes in one motion: the body retracts straight into the closed shape while the content fades out, and the
-    /// pill's ear grows back with the pill fading in from about 40 % of the way.
+    /// ears grow back with the pill and the mate fading in from about 40 % of the way.
     private func slideClosed() {
         closing = true
         let wasKey = window.isKeyWindow
-        if pillShown { showPill(revealDelay: Self.pillReturnDelay) }
-        transition(to: closedRect, radius: Self.closedRadius, spring: .close,
-                   ear: pillShown ? .show : .hide) { [weak self] in
+        showClosedContent(revealDelay: Self.pillReturnDelay)
+        transition(to: closedRect, radius: Self.closedRadius, spring: .close, ear: .show) { [weak self] in
             guard let self else { return }
             self.closing = false
-            // The pill may have appeared or gone, or the menu bar changed, while closing.
+            // The pill or the mate may have appeared or gone, or the menu bar changed, while closing.
             if self.shapeRect != self.closedRect || (self.earRect != nil) != self.pillShown
-                || (self.leftEarRect != nil) != self.mateShown || self.pillVisible != self.pillShown {
+                || (self.leftEarRect != nil) != self.mateShown || self.pillVisible != self.pillShown
+                || self.mateOnScreen != self.mateShown {
                 self.transitionClosed()
             }
             // Hand the keyboard back to the app the user was in (the panel became key only through a click).
@@ -445,35 +447,39 @@ final class NotchController {
         }
     }
 
-    /// The closed shape changed (pill shown or hidden, menu bar shown or hidden, panel just closed): the pill slides
-    /// out of the notch's right edge with its ring fading in, or fades and retracts into the notch.
+    /// The closed shape changed (pill or mate shown or hidden, menu bar shown or hidden, panel just closed): each ear
+    /// slides out of the notch's side with its content fading in, or fades and retracts into the notch. One ear can
+    /// come while the other goes; the spring is the opening one when anything comes.
     private func transitionClosed() {
-        if pillShown { showPill() } else { hidePill() }
-        transition(to: closedRect, radius: Self.closedRadius, spring: pillShown ? .open : .close,
-                   delay: pillShown ? 0 : 0.05, ear: pillShown ? .show : .hide)
+        let growing = (pillShown && earRect == nil) || (mateShown && leftEarRect == nil)
+        showClosedContent()
+        transition(to: closedRect, radius: Self.closedRadius, spring: growing ? .open : .close,
+                   delay: growing ? 0 : 0.05, ear: .show)
     }
 
-    /// Makes the pill (and the mate) visible, cancelling any held or in-flight fade-out; fades them in if they were
-    /// not visible.
-    private func showPill(revealDelay: CFTimeInterval = 0.1) {
-        pill.isHidden = false
-        mate.isHidden = !showMate
-        for view in [pill, mate] {
+    /// Shows the pill and the mate that are wanted closed and hides the others: a view that comes cancels any held
+    /// or in-flight fade-out and fades in if it was not on screen.
+    private func showClosedContent(revealDelay: CFTimeInterval = 0.1) {
+        pillVisible = setOnScreen(pill, pillShown, was: pillVisible, revealDelay: revealDelay)
+        mateOnScreen = setOnScreen(mate, mateShown, was: mateOnScreen, revealDelay: revealDelay)
+    }
+
+    /// Fades the pill and the mate out and holds them invisible until `showClosedContent`.
+    private func hideClosedContent() {
+        pillVisible = setOnScreen(pill, false, was: pillVisible, revealDelay: 0)
+        mateOnScreen = setOnScreen(mate, false, was: mateOnScreen, revealDelay: 0)
+    }
+
+    private func setOnScreen(_ view: NSView, _ on: Bool, was: Bool, revealDelay: CFTimeInterval) -> Bool {
+        if on {
+            view.isHidden = false
             NotchMotion.restore(view)
-            if !pillVisible { NotchMotion.reveal(view, delay: revealDelay, duration: 0.14) }
+            if !was { NotchMotion.reveal(view, delay: revealDelay, duration: 0.14) }
+        } else if was {
+            if NotchMotion.reduceMotion { view.isHidden = true } else { NotchMotion.fadeOut(view, duration: 0.08) }
+            if view === mate { mate.stop() }
         }
-        pillVisible = true
-    }
-
-    /// Fades the pill (and the mate) out and holds them invisible until `showPill`.
-    private func hidePill() {
-        if pillVisible {
-            for view in [pill, mate] {
-                if NotchMotion.reduceMotion { view.isHidden = true } else { NotchMotion.fadeOut(view, duration: 0.08) }
-            }
-            mate.stop()
-        }
-        pillVisible = false
+        return on
     }
 
     // MARK: Pill
@@ -494,6 +500,8 @@ final class NotchController {
             pillTagged = tagged
         }
         pillShown = wanted
+        mateShown = MateEar.shown(showMate: showMate, menuBarVisible: menuBarVisible, pillShown: wanted,
+                                  keptAwake: KeepAwake.shared.showsDot)
     }
 
     /// Only the store changes that can change what the notch shows (`NotchRefresh`): closed, an agent streaming
@@ -528,13 +536,14 @@ final class NotchController {
 
     private func refresh() {
         guard screenInfo != nil else { return }
-        let wasShown = pillShown, wasTagged = pillTagged
+        let wasShown = pillShown, wasTagged = pillTagged, wasMate = mateShown
         updatePill()
         mate.showsDot = KeepAwake.shared.showsDot
         updateSip()
         switch mode {
         case .closed:
-            if (wasShown != pillShown || (pillShown && wasTagged != pillTagged)) && !closing { transitionClosed() }
+            let changed = wasShown != pillShown || (pillShown && wasTagged != pillTagged) || wasMate != mateShown
+            if changed && !closing { transitionClosed() }
         case .open:
             resizePanel()
         case .alert:
@@ -596,7 +605,7 @@ final class NotchController {
     }
 
     /// The mate is on screen, at rest or sipping.
-    private var mateVisible: Bool { mode == .closed && !closing && pillVisible && showMate }
+    private var mateVisible: Bool { mode == .closed && !closing && mateOnScreen }
 
     /// Plays one sip if the mate is on screen (never with Reduce Motion).
     private func sip() {
@@ -648,7 +657,7 @@ final class NotchController {
         view.wantsLayer = true
         root.content.addSubview(view, positioned: .below, relativeTo: pill)
         mode = .alert
-        hidePill()
+        hideClosedContent()
         transition(to: alertRect, radius: Self.openRadius, ear: .hide)
         NotchMotion.reveal(view, delay: Self.contentDelay)
         alertTimer = oneShot(AlertBanner.visibleFor) { [weak self] in self?.dismissAlert() }

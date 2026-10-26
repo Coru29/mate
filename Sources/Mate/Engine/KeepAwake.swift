@@ -5,8 +5,8 @@ import MateCore
 
 /// "Mantener la Mac despierta mientras trabajan los agentes": holds Mate's power assertion while the store reports
 /// working agents and the option is on. Follows the store's activity changes (which the activity expiry's one-shot
-/// timer already drives) and the preference; nothing polls. Who else keeps the Mac awake is read only when asked
-/// (the panel opening).
+/// timer already drives) and the preference; nothing polls. Who else keeps the Mac awake (`caffeinate`, Amphetamine)
+/// is re-read when powerd announces an assertion change, coalesced into one read per burst.
 @MainActor
 final class KeepAwake: ObservableObject {
     static let shared = KeepAwake()
@@ -21,6 +21,10 @@ final class KeepAwake: ObservableObject {
     private var assertion: IOPMAssertionID?
     private var working: [ProviderID] = []
     private var subscriptions: [AnyCancellable] = []
+    private var notifyTokens: [Int32] = []
+    private var recheckTimer: Timer?
+    /// Assertion changes come in bursts (an app takes and drops several at once): one read per this window.
+    static let coalesce: TimeInterval = 1
 
     func start(store: UsageStore) {
         guard subscriptions.isEmpty else { return }
@@ -41,6 +45,23 @@ final class KeepAwake: ObservableObject {
                 }
             }.store(in: &subscriptions)
         apply()
+        notifyTokens = PowerAssertions.observeChanges { [weak self] in
+            MainActor.assumeIsolated { self?.assertionsChanged() }
+        }
+        checkExternal()
+    }
+
+    private func assertionsChanged() {
+        guard recheckTimer == nil else { return }
+        let t = Timer(timeInterval: Self.coalesce, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.recheckTimer = nil
+                self?.checkExternal()
+            }
+        }
+        t.tolerance = Self.coalesce * 0.2
+        RunLoop.main.add(t, forMode: .common)
+        recheckTimer = t
     }
 
     private func apply() {
@@ -60,15 +81,22 @@ final class KeepAwake: ObservableObject {
     /// Releases the assertion (quitting).
     func stop() {
         subscriptions.removeAll()
+        PowerAssertions.stopObserving(notifyTokens)
+        notifyTokens = []
+        recheckTimer?.invalidate()
+        recheckTimer = nil
         if let id = assertion { PowerAssertions.release(id) }
         assertion = nil
         held = false
     }
 
-    /// Reads who else holds keep-awake assertions (once per panel opening).
+    /// Reads who else holds keep-awake assertions (at launch, after each burst of assertion changes, and when the
+    /// panel opens). Mate's own assertion is never in the list, so its changes publish nothing.
     func checkExternal() {
         let holders = KeepAwakePolicy.externalHolders(PowerAssertions.processes(), ownPID: getpid())
-        if holders != external { external = holders }
+        guard holders != external else { return }
+        Log.info("keep awake: other holders \(holders.isEmpty ? "none" : holders.map { "\($0.name)(\($0.pid))" }.joined(separator: ", "))")
+        external = holders
     }
 
     /// The panel's status line, nil when it shows nothing.
@@ -89,7 +117,8 @@ final class KeepAwake: ObservableObject {
         return nil
     }
 
-    /// The mate's green dot: held by Mate, or by another process at the last check.
+    /// The Mac is kept awake (the mate's ear shows, with its green dot): by Mate, or by another process at the last
+    /// check.
     var showsDot: Bool { held || !external.isEmpty }
 
     /// `--dump`: the option, whether a Mate holds its assertion, and the other holders.

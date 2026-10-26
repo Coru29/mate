@@ -4,6 +4,9 @@ import AppKit
 /// at 4 s, rendering what is on screen (the layers' presentation, mid-animation) to PNGs: the open at a few moments,
 /// the slide every 32 ms, the close every 16 ms. At 5.5 s it starts hiding the pill and cancels the hide 40 ms later
 /// (pill-*.png: the pill must end visible). At 7 s the mate takes a sip (sip-*.png, through the whole animation).
+/// At 10 s the pill is hidden for good, leaving the mate's ear alone if the Mac is kept awake (solo-*.png); the panel
+/// opens from that state at 11.5 s and closes at 12.5 s (solo-open-*.png, solo-close-*.png), and the pill comes back
+/// at 14 s (back-*.png).
 /// `--trace-anim <dir>`: the same open and close without PNGs; a display link (only while each animation runs)
 /// writes one line per frame to open-trace.txt / close-trace.txt: time since start, gap since the previous frame,
 /// the window frame and the body's on-screen bounds. In-process, no screen recording.
@@ -61,6 +64,21 @@ extension NotchController {
                 DispatchQueue.main.asyncAfter(deadline: .now() + t) { self?.renderPresentation(to: "\(dir)/pill-\(Int(t * 1000))ms.png") }
             }
         }
+        func frames(_ at: TimeInterval, _ prefix: String, _ times: [Double], _ action: @escaping (NotchController) -> Void) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + at) { [weak self] in
+                guard let self else { return }
+                action(self)
+                for t in times {
+                    let name = String(format: "\(prefix)-%04dms.png", Int((t * 1000).rounded()))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in self?.renderPresentation(to: "\(dir)/\(name)") }
+                }
+            }
+        }
+        let morph = [0.03, 0.08, 0.15, 0.3, 1.0]
+        frames(10, "solo", morph) { $0.debugSetPillHidden(true) }
+        frames(11.5, "solo-open", [0.05, 0.15, 0.8]) { $0.openPanel() }
+        frames(12.5, "solo-close", [0.05, 0.12, 0.5]) { $0.closePanel() }
+        frames(14, "back", morph) { $0.debugSetPillHidden(false) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
             self?.debugSip()
             for t in [0.0, 0.4, 0.9, 1.3, 1.6, 1.9, 2.2, 2.5, 3.0] {
