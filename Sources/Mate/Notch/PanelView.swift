@@ -16,6 +16,7 @@ struct PanelView: View {
     var hint = false
     let onHeader: () -> Void
     @ObservedObject private var awake = KeepAwake.shared
+    @ObservedObject private var menuBar = MenuBarWatcher.shared
 
     var body: some View {
         let now = Date()
@@ -35,6 +36,7 @@ struct PanelView: View {
                 }
                 live(account.provider, now: now)
                 keepAwakeRow
+                menuBarRow
             } else {
                 Text("No hay cuentas. Iniciá sesión en un agente o sumá una cuenta en Configuración.")
                     .font(.system(size: 12.5))
@@ -218,6 +220,28 @@ struct PanelView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
+            }
+            .font(.system(size: 12))
+            .padding(.top, -4)
+        }
+    }
+
+    /// On a display without a notch, Mate needs Accessibility to see where the menus end; asked only from here.
+    @ViewBuilder
+    private var menuBarRow: some View {
+        if menuBar.needsPermission {
+            HStack(spacing: 7) {
+                Image(systemName: "menubar.rectangle")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(NotchPalette.muted)
+                    .frame(width: 16, height: 16)
+                Text("Para no tapar los menús, Mate necesita permiso de Accesibilidad")
+                    .fontWeight(.medium)
+                    .foregroundStyle(NotchPalette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button { menuBar.requestPermission() } label: { Text("Permitir") }
+                    .controlSize(.small)
             }
             .font(.system(size: 12))
             .padding(.top, -4)

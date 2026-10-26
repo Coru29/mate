@@ -33,6 +33,7 @@ struct GeneralView: View {
                 }
                 Toggle("Mostrar el mate junto al notch", isOn: backend.binding(.showMateIcon, default: true))
                 Toggle("Mostrar lo que estás escuchando", isOn: backend.binding(.showNowPlaying, default: true))
+                Toggle("Esquivar los menús en monitores sin notch", isOn: backend.binding(.avoidMenuBar, default: true))
             } footer: {
                 Text("Sin notch, Mate dibuja uno propio arriba al centro. Pasar el mouse por el notch abre el panel aunque el pill no se vea.")
             }
