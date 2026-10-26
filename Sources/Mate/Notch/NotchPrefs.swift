@@ -14,4 +14,5 @@ enum NotchPrefs {
     static var disabledProviders: [String] { value(.disabledProviders) ?? [] }
     static var showMateIcon: Bool { value(.showMateIcon) ?? true }
     static var keepAwake: Bool { value(.keepAwake) ?? false }
+    static var showNowPlaying: Bool { value(.showNowPlaying) ?? true }
 }

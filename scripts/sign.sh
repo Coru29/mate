@@ -31,4 +31,5 @@ restore() { security list-keychains -d user -s "${ORIGINAL[@]}"; }
 trap restore EXIT
 security list-keychains -d user -s "$KC" "${ORIGINAL[@]}"
 
-codesign --force --options runtime --sign "$IDENTITY" --keychain "$KC" "$APP"
+# The hardened runtime blocks Apple Events unless the app asks for them (now playing: Spotify and Music).
+codesign --force --options runtime --entitlements Packaging/Mate.entitlements --sign "$IDENTITY" --keychain "$KC" "$APP"

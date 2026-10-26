@@ -32,6 +32,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.notch = notch
         self.backend = backend
         KeepAwake.shared.start(store: store)
+        // Real players only in a normal run; `--fake` gets the scripted one, and a headless run without it (the
+        // single-instance checks) touches no player at all.
+        if DebugCLI.isFake {
+            NowPlayingCenter.shared.start(fake: FakePlayerBridge.fromArguments)
+        } else if !DebugCLI.isHeadless {
+            NowPlayingCenter.shared.start(fake: nil)
+        }
         if DebugCLI.isHeadless {
             // Test runs: no notch, no guide, no window of any kind on the user's screen; only `--fake` fetches.
             store.onAlert = { event in Log.info("alert \(event.kind) \(event.accountID) (headless)") }
@@ -101,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
             KeepAwake.shared.stop()
+            NowPlayingCenter.shared.stop()
             store?.flush()
         }
     }
